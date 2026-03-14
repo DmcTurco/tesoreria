@@ -9,6 +9,7 @@ use App\Http\Controllers\Api\MovimientoController;
 use App\Http\Controllers\Api\MultaController;
 use App\Http\Controllers\Api\PresupuestoController;
 use App\Http\Controllers\Api\ReporteController;
+use Illuminate\Http\Request;
 
 // ── Públicas ──────────────────────────────────────────────────────────────────
 Route::post('/login', [AuthController::class, 'login']);
@@ -87,7 +88,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::middleware('role:2')->group(function () {
 
         // Su propio QR
-        Route::get('/mi-qr', function (\Illuminate\Http\Request $request) {
+        Route::get('/mi-qr', function (Request $request) {
             $padre = $request->user()->padre;
             if (!$padre) {
                 return response()->json(['message' => 'No tiene perfil de padre asociado'], 404);
@@ -99,7 +100,7 @@ Route::middleware('auth:sanctum')->group(function () {
         });
 
         // Su estado: deuda, multas, pagos
-        Route::get('/mi-estado', function (\Illuminate\Http\Request $request) {
+        Route::get('/mi-estado', function (Request $request) {
             $padre = $request->user()->padre;
             if (!$padre) {
                 return response()->json(['message' => 'No tiene perfil de padre asociado'], 404);
