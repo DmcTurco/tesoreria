@@ -24,6 +24,8 @@ class EventoPadre extends Model
         'multa_generada',
         'motivo_exoneracion',
         'exonerado_por',
+        'es_reemplazo',
+        'anotacion',
     ];
 
     protected $casts = [

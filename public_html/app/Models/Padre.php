@@ -34,8 +34,8 @@ class Padre extends Model
     public function eventos()
     {
         return $this->belongsToMany(Evento::class, 'evento_padres')
-                    ->withPivot('fecha', 'estado', 'hora_marcado', 'multa_generada', 'motivo_exoneracion', 'exonerado_por')
-                    ->withTimestamps();
+            ->withPivot('fecha', 'estado', 'hora_marcado', 'multa_generada', 'motivo_exoneracion', 'exonerado_por')
+            ->withTimestamps();
     }
 
     public function eventoPadres()
@@ -45,12 +45,21 @@ class Padre extends Model
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
-    /** Total de deuda pendiente (multas + cuotas pendientes) */
+    /** Total de deuda pendiente (multas + cuotas + cobros de eventos) */
     public function saldoDeuda(): float
     {
         $multas = $this->multas()->where('estado', Multa::ESTADO_PENDIENTE)->sum('monto');
         $cuotas = $this->pagos()->where('estado', Pago::ESTADO_PENDIENTE)->sum('monto');
-        return (float) ($multas + $cuotas);
+
+        // Cobros: eventos tipo cobro pendientes → el monto viene del evento.multa_monto
+        $cobros = $this->eventoPadres()
+            ->where('estado', EventoPadre::ESTADO_PENDIENTE)
+            ->whereHas('evento', fn($q) => $q->where('tipo', Evento::TIPO_COBRO))
+            ->with('evento')
+            ->get()
+            ->sum(fn($ep) => (float) ($ep->evento->multa_monto ?? 0));
+
+        return (float) ($multas + $cuotas + $cobros);
     }
 
     /** String que se codifica en el QR personal del padre */

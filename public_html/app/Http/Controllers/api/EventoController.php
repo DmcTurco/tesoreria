@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Evento;
 use App\Models\EventoPadre;
+use App\Models\Multa;
 use App\Models\Padre;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -25,9 +26,15 @@ class EventoController extends Controller
     // GET /api/eventos/{id}
     public function show(Evento $evento)
     {
-        return response()->json(
-            $evento->load('creador', 'eventoPadres.padre')
-        );
+        $evento->load([
+            'creador:id,name',
+            'padres' => function ($q) {
+                $q->select('padres.id', 'padres.nombre', 'padres.dni')
+                    ->withPivot('fecha', 'estado', 'es_reemplazo', 'reemplaza_a');
+            }
+        ]);
+
+        return response()->json($evento);
     }
 
     // POST /api/eventos
@@ -110,38 +117,37 @@ class EventoController extends Controller
     }
 
     // POST /api/eventos/{id}/cerrar
-    public function cerrar(Request $request, Evento $evento)
+    public function cerrar(Evento $evento)
     {
-        if ($evento->estado === Evento::ESTADO_CERRADO) {
-            return response()->json(['message' => 'El evento ya está cerrado'], 422);
-        }
+        DB::transaction(function () use ($evento) {
+            // Marcar como falta a los que quedaron pendientes
+            EventoPadre::where('evento_id', $evento->id)
+                ->where('estado', EventoPadre::ESTADO_PENDIENTE)
+                ->update(['estado' => EventoPadre::ESTADO_AUSENTE]);
 
-        DB::transaction(function () use ($evento, $request) {
-            $fecha = $request->input('fecha', now()->toDateString());
+            // Si tiene multa, registrar en tabla multas
+            if ($evento->tiene_multa) {
+                $faltosos = EventoPadre::where('evento_id', $evento->id)
+                    ->where('estado', EventoPadre::ESTADO_AUSENTE)
+                    ->get();
 
-            // Marcar ausentes: pendientes del día
-            $query = $evento->eventoPadres()
-                ->where('estado', EventoPadre::ESTADO_PENDIENTE);
-
-            // Para guardias filtrar por fecha del día
-            if ($evento->esGuardia()) {
-                $query->where('fecha', $fecha);
+                foreach ($faltosos as $ep) {
+                    Multa::firstOrCreate([
+                        'padre_id'   => $ep->padre_id,
+                        'evento_id'  => $evento->id,
+                    ], [
+                        'monto'      => $evento->multa_monto,
+                        'concepto'       => "Inasistencia: {$evento->titulo}", 
+                        'estado'         => Multa::ESTADO_PENDIENTE,
+                        'fecha_generada' => now()->toDateString(),
+                    ]);
+                }
             }
 
-            $query->update(['estado' => EventoPadre::ESTADO_AUSENTE]);
-
-            // Generar multas si aplica
-            $generadas = $evento->aplicarMultasAusentes(
-                $evento->esGuardia() ? $fecha : null
-            );
-
-            // Solo cerrar el evento si no es guardia (la guardia cierra al vencer fecha_fin)
-            if (!$evento->esGuardia()) {
-                $evento->update(['estado' => Evento::ESTADO_CERRADO]);
-            }
+            $evento->update(['estado' => 1]);
         });
 
-        return response()->json(['message' => 'Evento cerrado y multas generadas correctamente']);
+        return response()->json(['message' => 'Evento cerrado correctamente']);
     }
 
     // POST /eventos/{evento}/agregar-padre

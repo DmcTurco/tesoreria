@@ -22,6 +22,8 @@ return new class extends Migration
             $table->boolean('multa_generada')->default(false);
             $table->text('motivo_exoneracion')->nullable();
             $table->unsignedBigInteger('exonerado_por')->nullable();
+            $table->boolean('es_reemplazo')->default(false);
+            $table->string('anotacion')->nullable(); // "Vino el tío Juan" / "Reemplazó María"
             $table->timestamps();
             $table->softDeletes();
 
