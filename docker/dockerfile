@@ -48,7 +48,7 @@ RUN curl -sL https://deb.nodesource.com/setup_20.x | bash
 RUN apt-get install -y nodejs
 
 # Timezone
-ENV TZ Asia/Tokyo
+ENV TZ=America/Lima
 RUN ln -snf /usr/share/zoneinfo/${TZ} /etc/localtime && echo ${TZ} > /etc/timezone
 
 # msmtp

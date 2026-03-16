@@ -28,8 +28,8 @@ services:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       PGPORT: ${POSTGRES_PORT}
-      TZ: JST-9
-      PGTZ: JST-9
+      TZ: America/Lima
+      PGTZ: America/Lima
 
   mailhog:
     image: mailhog/mailhog

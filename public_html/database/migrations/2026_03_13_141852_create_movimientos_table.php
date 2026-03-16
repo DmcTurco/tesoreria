@@ -22,6 +22,7 @@ return new class extends Migration
             $table->string('comprobante')->nullable();
             $table->text('observaciones')->nullable();
             $table->unsignedBigInteger('registrado_por')->nullable();
+            $table->timestamps();
             $table->softDeletes();
         });
     }

@@ -144,6 +144,31 @@ class EventoController extends Controller
         return response()->json(['message' => 'Evento cerrado y multas generadas correctamente']);
     }
 
+    // POST /eventos/{evento}/agregar-padre
+    public function agregarPadre(Request $request, Evento $evento)
+    {
+        $request->validate(['padre_id' => 'required|integer|exists:padres,id']);
+
+        // Evitar duplicado
+        $existe = EventoPadre::where('evento_id', $evento->id)
+            ->where('padre_id', $request->padre_id)
+            ->whereNull('fecha')
+            ->exists();
+
+        if ($existe) {
+            return response()->json(['message' => 'El padre ya está asignado'], 422);
+        }
+
+        EventoPadre::create([
+            'evento_id' => $evento->id,
+            'padre_id'  => $request->padre_id,
+            'fecha'     => null,
+            'estado'    => EventoPadre::ESTADO_PENDIENTE,
+        ]);
+
+        return response()->json(['message' => 'Padre asignado correctamente']);
+    }
+
     // POST /api/eventos/{id}/asistencia  ← escaneo QR
     public function registrarAsistencia(Request $request, Evento $evento)
     {

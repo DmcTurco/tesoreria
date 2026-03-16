@@ -98,5 +98,6 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/eventos',                         [EventoController::class, 'store']);
         Route::put('/eventos/{evento}',                [EventoController::class, 'update']);
         Route::post('/eventos/{evento}/exonerar-padre', [EventoController::class, 'exonerarPadre']);
+        Route::post('/eventos/{evento}/agregar-padre', [EventoController::class, 'agregarPadre']);
     });
 });
