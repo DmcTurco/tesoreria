@@ -10,6 +10,7 @@ class Pago extends Model
     const ESTADO_PENDIENTE = 0;
     const ESTADO_PAGADO    = 1;
     const ESTADO_ANULADO   = 2;
+    const DEUDA_PERDONADA  = 'perdonada'; 
 
     protected $fillable = [
         'padre_id',

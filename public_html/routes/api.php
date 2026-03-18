@@ -25,16 +25,18 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/eventos',                     [EventoController::class,    'index']);
     Route::get('/eventos/{evento}',            [EventoController::class,    'show']);
     Route::get('/eventos/{evento}/padres',     [EventoController::class,    'padres']);
+    Route::get('/eventos/{evento}/fechas',     [EventoController::class,    'fechas']);
     Route::get('/movimientos',                 [MovimientoController::class, 'index']);
     Route::get('/multas',                      [MultaController::class,     'index']);
     Route::get('/padres',                      [PadreController::class,     'index']);
+    Route::get('/padres/con-deuda',            [PagoController::class,   'padresConDeuda']); // ← agregar
     Route::get('/padres/{padre}',              [PadreController::class,     'show']);
     Route::get('/padres/{padre}/qr',           [PadreController::class,     'qr']);
     Route::get('/pagos',                       [PagoController::class,      'index']);
-    Route::get('/presupuestos',                [PresupuestoController::class,'index']);
+    Route::get('/presupuestos',                [PresupuestoController::class, 'index']);
     Route::get('/reportes/dashboard',          [ReporteController::class,   'dashboard']);
     Route::get('/reportes/deudores',           [ReporteController::class,   'deudores']);
-    Route::get('/reportes/movimientos-por-mes',[ReporteController::class,   'movimientosPorMes']);
+    Route::get('/reportes/movimientos-por-mes', [ReporteController::class,   'movimientosPorMes']);
 
     // ── Solo padre (2) ───────────────────────────────────────────────────────
     Route::middleware('role:2')->group(function () {
@@ -50,10 +52,10 @@ Route::middleware('auth:sanctum')->group(function () {
 
             // Cobros = eventos tipo cobro pendientes → monto viene de evento.multa_monto
             $cobros = $padre->eventoPadres()
-                            ->where('estado', 0)
-                            ->whereHas('evento', fn($q) => $q->where('tipo', 3))
-                            ->with('evento')
-                            ->get();
+                ->where('estado', 0)
+                ->whereHas('evento', fn($q) => $q->where('tipo', 3))
+                ->with('evento')
+                ->get();
 
             return response()->json([
                 'padre'       => $padre,
@@ -81,10 +83,10 @@ Route::middleware('auth:sanctum')->group(function () {
             if (!$padre) return response()->json(['message' => 'Padre no encontrado'], 404);
 
             $cobros = $padre->eventoPadres()
-                            ->where('estado', 0)
-                            ->whereHas('evento', fn($q) => $q->where('tipo', 3))
-                            ->with('evento')
-                            ->get();
+                ->where('estado', 0)
+                ->whereHas('evento', fn($q) => $q->where('tipo', 3))
+                ->with('evento')
+                ->get();
 
             return response()->json([
                 'multas' => $padre->multas()->where('estado', 0)->get(),
@@ -99,36 +101,39 @@ Route::middleware('auth:sanctum')->group(function () {
         });
 
         // Padres
-        Route::post  ('/padres',                        [PadreController::class, 'store']);
-        Route::put   ('/padres/{padre}',                [PadreController::class, 'update']);
+        Route::post('/padres',                        [PadreController::class, 'store']);
+        Route::put('/padres/{padre}',                [PadreController::class, 'update']);
         Route::delete('/padres/{padre}',                [PadreController::class, 'destroy']);
-        Route::put   ('/padres/{padre}/reset-password', [PadreController::class, 'resetPassword']);
+        Route::put('/padres/{padre}/reset-password', [PadreController::class, 'resetPassword']);
 
         // Pagos
-        Route::get ('/pagos/{pago}',        [PagoController::class, 'show']);
+        Route::get('/pagos/{pago}',        [PagoController::class, 'show']);
         Route::post('/pagos',               [PagoController::class, 'store']);
-        Route::put ('/pagos/{pago}/anular', [PagoController::class, 'anular']);
+        Route::put('/pagos/{pago}/anular', [PagoController::class, 'anular']);
 
         // Movimientos
-        Route::get   ('/movimientos/{movimiento}', [MovimientoController::class, 'show']);
-        Route::post  ('/movimientos',              [MovimientoController::class, 'store']);
-        Route::put   ('/movimientos/{movimiento}', [MovimientoController::class, 'update']);
+        Route::get('/movimientos/{movimiento}', [MovimientoController::class, 'show']);
+        Route::post('/movimientos',              [MovimientoController::class, 'store']);
+        Route::put('/movimientos/{movimiento}', [MovimientoController::class, 'update']);
         Route::delete('/movimientos/{movimiento}', [MovimientoController::class, 'destroy']);
 
         // Multas
-        Route::get ('/multas/{multa}',          [MultaController::class, 'show']);
+        Route::get('/multas/{multa}',          [MultaController::class, 'show']);
         Route::post('/multas/{multa}/pagar',    [MultaController::class, 'pagar']);
         Route::post('/multas/{multa}/exonerar', [MultaController::class, 'exonerar']);
         Route::post('/multas/{multa}/anular',   [MultaController::class, 'anular']);
 
         // Presupuesto
-        Route::post  ('/presupuestos',               [PresupuestoController::class, 'store']);
-        Route::put   ('/presupuestos/{presupuesto}', [PresupuestoController::class, 'update']);
+        Route::post('/presupuestos',               [PresupuestoController::class, 'store']);
+        Route::put('/presupuestos/{presupuesto}', [PresupuestoController::class, 'update']);
         Route::delete('/presupuestos/{presupuesto}', [PresupuestoController::class, 'destroy']);
 
         // Eventos
         Route::post('/eventos',                         [EventoController::class, 'store']);
-        Route::put ('/eventos/{evento}',                [EventoController::class, 'update']);
+        Route::put('/eventos/{evento}',                [EventoController::class, 'update']);
         Route::post('/eventos/{evento}/exonerar-padre', [EventoController::class, 'exonerarPadre']);
+        Route::post('/eventos/{evento}/agregar-padre',   [EventoController::class, 'agregarPadre']); // ← agregar
+        Route::put('/eventos/{evento}/quitar-padre/{padre}', [EventoController::class, 'quitarPadre']);
+        Route::delete('/eventos/{evento}/quitar-padre/{padre}', [EventoController::class, 'eliminarPadre']);
     });
 });

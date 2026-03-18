@@ -16,6 +16,7 @@ return new class extends Migration
             $table->unsignedBigInteger('padre_id');
             $table->unsignedBigInteger('evento_id')->nullable();
             $table->decimal('monto', 8, 2)->default(10.00);
+            $table->decimal('monto_pagado', 10, 2)->default(0);
             $table->string('concepto');
             // 0 = pendiente | 1 = pagado | 2 = exonerado | 3 = anulado
             $table->unsignedTinyInteger('estado')->default(0);

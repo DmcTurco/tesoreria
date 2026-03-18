@@ -18,6 +18,7 @@ return new class extends Migration
             $table->date('fecha')->nullable();           // solo guardias
             // 0 = pendiente | 1 = presente | 2 = ausente | 3 = justificado | 4 = exonerado
             $table->unsignedTinyInteger('estado')->default(0);
+            $table->decimal('monto_pagado', 10, 2)->default(0);
             $table->timestamp('hora_marcado')->nullable();
             $table->boolean('multa_generada')->default(false);
             $table->text('motivo_exoneracion')->nullable();

@@ -3,8 +3,12 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Evento;
+use App\Models\EventoPadre;
 use App\Models\Pago;
 use App\Models\Movimiento;
+use App\Models\Multa;
+use App\Models\Padre;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -81,18 +85,111 @@ class PagoController extends Controller
         });
     }
 
-    // PUT /api/pagos/{id}/anular
-    public function anular(Request $request, Pago $pago)
+    /**
+     * GET /api/padres/con-deuda
+     * Devuelve solo los padres que tienen deuda pendiente (multas + cuotas + cobros).
+     * Incluye el monto total de deuda para mostrarlo en el selector.
+     */
+    public function padresConDeuda(Request $request)
     {
-        if ($pago->estado === Pago::ESTADO_ANULADO) {
-            return response()->json(['message' => 'El pago ya está anulado'], 422);
+        $padres = Padre::with(['user', 'multas', 'pagos', 'eventoPadres.evento'])
+            ->get()
+            ->map(function ($padre) {
+                // Multas pendientes
+                $multas = $padre->multas
+                    ->where('estado', Multa::ESTADO_PENDIENTE)
+                    ->sum('monto');
+
+                // Cuotas/pagos pendientes
+                $cuotas = $padre->pagos
+                    ->where('estado', Pago::ESTADO_PENDIENTE)
+                    ->sum('monto');
+
+                // Cobros de eventos pendientes
+                $cobros = $padre->eventoPadres
+                    ->where('estado', EventoPadre::ESTADO_PENDIENTE)
+                    ->filter(fn($ep) => optional($ep->evento)->tipo === Evento::TIPO_COBRO)
+                    ->sum(fn($ep) => optional($ep->evento)->multa_monto ?? 0);
+
+                $totalDeuda = (float) ($multas + $cuotas + $cobros);
+
+                return [
+                    'id'          => $padre->id,
+                    'nombre'      => $padre->nombre,
+                    'hijo'        => $padre->hijo ?? '—',
+                    'dni'         => $padre->dni,
+                    'deuda_total' => $totalDeuda,
+                    // Desglose por si quieres mostrarlo en el frontend
+                    'desglose'    => [
+                        'multas' => (float) $multas,
+                        'cuotas' => (float) $cuotas,
+                        'cobros' => (float) $cobros,
+                    ],
+                ];
+            })
+            // Solo los que deben algo
+            ->filter(fn($p) => $p['deuda_total'] > 0)
+            // Ordenados de mayor a menor deuda
+            ->sortByDesc('deuda_total')
+            ->values();
+
+        return response()->json($padres);
+    }
+
+    public function anular(Request $request, $id)
+    {
+        // ── 1. Solo el Tesorero ────────────────────────────────────────────────
+        if ($request->user()->role !== 0) {  // 0 = Tesorero
+            return response()->json(['message' => 'No autorizado.'], 403);
         }
 
-        $pago->update([
-            'estado'        => Pago::ESTADO_ANULADO,
-            'observaciones' => $request->input('motivo', 'Anulado por tesorero'),
+        // ── 2. Validar body ────────────────────────────────────────────────────
+        $request->validate([
+            'motivo'         => 'required|string|max:255',
+            'perdonar_deuda' => 'required|boolean',
         ]);
 
-        return response()->json(['message' => 'Pago anulado correctamente']);
+        // ── 3. Buscar el pago ──────────────────────────────────────────────────
+        $pago = Pago::with('movimiento')->findOrFail($id);
+
+        if ($pago->estado !== Pago::ESTADO_PAGADO) {
+            return response()->json([
+                'message' => 'Solo se pueden anular pagos en estado PAGADO.',
+            ], 422);
+        }
+
+        // ── 4. Ejecutar en transacción ─────────────────────────────────────────
+        DB::transaction(function () use ($pago, $request) {
+            $perdonar = $request->boolean('perdonar_deuda');
+
+            $pago->update([
+                'estado'           => Pago::ESTADO_ANULADO,
+                'motivo_anulacion' => $request->motivo,
+                'anulado_por'      => auth()->id(),
+                'anulado_at'       => now(),
+                'deuda_perdonada'  => $perdonar,
+            ]);
+
+            if ($perdonar) {
+                $pago->update(['estado_deuda' => 'perdonada']);
+            } else {
+                if ($pago->multa_id) {
+                    Multa::where('id', $pago->multa_id)
+                        ->update(['estado' => Multa::ESTADO_PENDIENTE]);
+                }
+                if ($pago->evento_padre_id) {
+                    EventoPadre::where('id', $pago->evento_padre_id)
+                        ->update(['estado' => EventoPadre::ESTADO_PENDIENTE]);
+                }
+            }
+        });
+
+        return response()->json([
+            'success' => true,
+            'message' => $request->boolean('perdonar_deuda')
+                ? 'Pago anulado y deuda perdonada correctamente.'
+                : 'Pago anulado. La deuda volvió a estado pendiente.',
+        ]);
     }
+
 }
