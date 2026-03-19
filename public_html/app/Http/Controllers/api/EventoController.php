@@ -79,7 +79,7 @@ class EventoController extends Controller
             $padresIds = $request->input('padres_ids', []);
 
             // Cobro → todos los padres automáticamente
-            if ($evento->esCobro()) {
+            if ($evento->esCuota()) {
                 $this->asignarTodosLosPadres($evento);
             }
             // Reunión → todos los padres automáticamente
@@ -287,7 +287,7 @@ class EventoController extends Controller
 
         return response()->json(['message' => 'Asignación eliminada correctamente']);
     }
-    
+
 
     // GET /api/eventos/{id}/fechas  ← fechas de una guardia con sus padres asignados
     public function fechas(Evento $evento)
@@ -344,8 +344,10 @@ class EventoController extends Controller
     public function registrarAsistencia(Request $request, Evento $evento)
     {
         $request->validate([
-            'padre_id' => 'required|integer|exists:padres,id',
-            'fecha'    => 'nullable|date',
+            'padre_id'     => 'required|integer|exists:padres,id',
+            'fecha'        => 'nullable|date',
+            'es_reemplazo' => 'boolean',       // ← agregado
+            'anotacion'    => 'nullable|string|max:255', // ← agregado
         ]);
 
         $fecha = $request->input('fecha', now()->toDateString());
@@ -376,6 +378,8 @@ class EventoController extends Controller
         $ep->update([
             'estado'       => EventoPadre::ESTADO_PRESENTE,
             'hora_marcado' => now(),
+            'es_reemplazo' => $request->boolean('es_reemplazo', false), // ← agregado
+            'anotacion'    => $request->anotacion,                       // ← agregado
         ]);
 
         return response()->json([

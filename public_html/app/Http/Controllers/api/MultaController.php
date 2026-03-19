@@ -4,9 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Multa;
-use App\Models\Movimiento;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 
 class MultaController extends Controller
 {
@@ -36,33 +34,7 @@ class MultaController extends Controller
         return response()->json($multa->load('padre', 'evento', 'pagador', 'exonerador'));
     }
 
-    // POST /api/multas/{id}/pagar
-    public function pagar(Request $request, Multa $multa)
-    {
-        if ($multa->estado !== Multa::ESTADO_PENDIENTE) {
-            return response()->json(['message' => 'La multa no está en estado pendiente'], 422);
-        }
-
-        return DB::transaction(function () use ($request, $multa) {
-            $multa->update([
-                'estado'       => Multa::ESTADO_PAGADO,
-                'fecha_pagado' => now()->toDateString(),
-                'pagado_por'   => $request->user()->id,
-            ]);
-
-            // Registrar automáticamente como ingreso en movimientos
-            Movimiento::create([
-                'tipo'           => Movimiento::TIPO_INGRESO,
-                'monto'          => $multa->monto,
-                'descripcion'    => $multa->concepto,
-                'categoria'      => 'Multa',
-                'fecha'          => now()->toDateString(),
-                'registrado_por' => $request->user()->id,
-            ]);
-
-            return response()->json(['message' => 'Multa cobrada y registrada como ingreso']);
-        });
-    }
+    // ❌ pagar() eliminado → se reemplaza por POST /api/abonos con tipo_deuda=multa
 
     // POST /api/multas/{id}/exonerar
     public function exonerar(Request $request, Multa $multa)

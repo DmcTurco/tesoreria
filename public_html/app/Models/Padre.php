@@ -21,9 +21,9 @@ class Padre extends Model
         return $this->hasOne(User::class);
     }
 
-    public function pagos()
+    public function abonos()
     {
-        return $this->hasMany(Pago::class);
+        return $this->hasMany(Abono::class);
     }
 
     public function multas()
@@ -45,21 +45,24 @@ class Padre extends Model
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
-    /** Total de deuda pendiente (multas + cuotas + cobros de eventos) */
+    /** Total de deuda pendiente (multas + cobros de eventos) */
     public function saldoDeuda(): float
     {
-        $multas = $this->multas()->where('estado', Multa::ESTADO_PENDIENTE)->sum('monto');
-        $cuotas = $this->pagos()->where('estado', Pago::ESTADO_PENDIENTE)->sum('monto');
+        // Multas pendientes o parciales → saldo real = monto - monto_pagado
+        $multas = $this->multas()
+            ->whereIn('estado', [Multa::ESTADO_PENDIENTE, 1]) // 0=pendiente, 1=parcial
+            ->get()
+            ->sum(fn($m) => max(0, (float) $m->monto - (float) ($m->monto_pagado ?? 0)));
 
-        // Cobros: eventos tipo cobro pendientes → el monto viene del evento.multa_monto
+        // Cobros de eventos pendientes o parciales → saldo real
         $cobros = $this->eventoPadres()
-            ->where('estado', EventoPadre::ESTADO_PENDIENTE)
-            ->whereHas('evento', fn($q) => $q->where('tipo', Evento::TIPO_COBRO))
+            ->whereIn('estado', [EventoPadre::ESTADO_PENDIENTE, 1]) // 0=pendiente, 1=parcial
+            ->whereHas('evento', fn($q) => $q->where('tipo', Evento::TIPO_CUOTA))
             ->with('evento')
             ->get()
-            ->sum(fn($ep) => (float) ($ep->evento->multa_monto ?? 0));
+            ->sum(fn($ep) => max(0, (float) ($ep->evento->multa_monto ?? 0) - (float) ($ep->monto_pagado ?? 0)));
 
-        return (float) ($multas + $cuotas + $cobros);
+        return (float) ($multas + $cobros);
     }
 
     /** String que se codifica en el QR personal del padre */

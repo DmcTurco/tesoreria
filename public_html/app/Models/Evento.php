@@ -11,7 +11,7 @@ class Evento extends Model
     const TIPO_GUARDIA   = 0;
     const TIPO_FAENA     = 1;
     const TIPO_REUNION   = 2;
-    const TIPO_COBRO     = 3;
+    const TIPO_CUOTA     = 3; // ← TIPO_COBRO → TIPO_CUOTA
     const TIPO_ACTIVIDAD = 4;
 
     // ── Flags de estado ───────────────────────────────────────────────────────
@@ -84,9 +84,9 @@ class Evento extends Model
     {
         return $this->tipo === self::TIPO_REUNION;
     }
-    public function esCobro(): bool
+    public function esCuota(): bool  // ← esCobro() → esCuota()
     {
-        return $this->tipo === self::TIPO_COBRO;
+        return $this->tipo === self::TIPO_CUOTA;
     }
     public function esActividad(): bool
     {

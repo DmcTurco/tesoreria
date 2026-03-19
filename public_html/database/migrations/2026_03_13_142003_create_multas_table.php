@@ -18,8 +18,8 @@ return new class extends Migration
             $table->decimal('monto', 8, 2)->default(10.00);
             $table->decimal('monto_pagado', 10, 2)->default(0);
             $table->string('concepto');
-            // 0 = pendiente | 1 = pagado | 2 = exonerado | 3 = anulado
             $table->unsignedTinyInteger('estado')->default(0);
+            // 0 = pendiente | 1 = parcial | 2 = pagado | 3 = exonerado | 4 = anulado
             $table->date('fecha_generada');
             $table->date('fecha_pagado')->nullable();
             $table->unsignedBigInteger('pagado_por')->nullable();

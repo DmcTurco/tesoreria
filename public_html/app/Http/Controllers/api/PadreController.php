@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Multa;
 use App\Models\Padre;
 use App\Models\User;
 use Illuminate\Http\Request;
@@ -24,7 +25,7 @@ class PadreController extends Controller
     // GET /api/padres/{id}
     public function show(Padre $padre)
     {
-        return response()->json($padre->load('user', 'pagos', 'multas'));
+        return response()->json($padre->load('user', 'abonos', 'multas'));
     }
 
     // POST /api/padres
@@ -92,7 +93,7 @@ class PadreController extends Controller
             'padre'   => $padre,
         ]);
     }
-    
+
     // DELETE /api/padres/{id}
     public function destroy(Padre $padre)
     {
@@ -154,7 +155,7 @@ class PadreController extends Controller
 
         $cobros = $padre->eventoPadres()
             ->where('estado', 0)
-            ->whereHas('evento', fn($q) => $q->where('tipo', 3))
+            ->whereHas('evento', fn($q) => $q->where('tipo', Evento::TIPO_CUOTA))
             ->with('evento')
             ->get();
 
@@ -162,7 +163,7 @@ class PadreController extends Controller
             'padre'       => $padre,
             'saldo_deuda' => $padre->saldoDeuda(),
             'multas'      => $padre->multas()->with('evento')->orderByDesc('fecha_generada')->get(),
-            'pagos'       => $padre->pagos()->with('conceptoPago')->orderByDesc('fecha')->get(),
+            'abonos'      => $padre->abonos()->orderByDesc('fecha')->get(), // ← pagos → abonos
             'eventos'     => $padre->eventoPadres()->with('evento')->orderByDesc('created_at')->get(),
             'cobros'      => $cobros,
         ]);
@@ -183,7 +184,7 @@ class PadreController extends Controller
             ->get();
 
         return response()->json([
-            'multas' => $padre->multas()->where('estado', 0)->get(),
+            'multas' => $padre->multas()->whereIn('estado', [Multa::ESTADO_PENDIENTE, Multa::ESTADO_PARCIAL])->get(),
             'cobros' => $cobros,
         ]);
     }
