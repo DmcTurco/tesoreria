@@ -103,8 +103,7 @@ class PagoController extends Controller
 
                 // Cuotas/pagos pendientes
                 $cuotas = $padre->pagos
-                    ->where('estado', Pago::ESTADO_PENDIENTE)
-                    ->sum('monto');
+                    ->where('estado', Pago::ESTADO_PENDIENTE)->sum('monto');
 
                 // Cobros de eventos pendientes
                 $cobros = $padre->eventoPadres

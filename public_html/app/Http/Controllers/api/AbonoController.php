@@ -13,6 +13,37 @@ use Illuminate\Support\Facades\DB;
 
 class AbonoController extends Controller
 {
+
+    // GET /api/abonos
+    public function index(Request $request)
+    {
+        $query = Abono::with(['padre', 'registrador']);
+
+        if ($request->filled('padre_id')) {
+            $query->where('padre_id', $request->padre_id);
+        }
+
+        if ($request->filled('tipo_deuda')) {
+            $query->where('tipo_deuda', $request->tipo_deuda);
+        }
+
+        if ($request->filled('estado')) {
+            $query->where('estado', $request->estado);
+        }
+
+        if ($request->filled('fecha_inicio')) {
+            $query->whereDate('fecha', '>=', $request->fecha_inicio);
+        }
+
+        if ($request->filled('fecha_fin')) {
+            $query->whereDate('fecha', '<=', $request->fecha_fin);
+        }
+
+        return response()->json(
+            $query->orderByDesc('fecha')->get()
+        );
+    }
+
     // ── Registrar abono ───────────────────────────────────────────────────────
     // POST /api/abonos
     // Body: { padre_id, tipo_deuda, deuda_id, monto, fecha }
@@ -128,9 +159,7 @@ class AbonoController extends Controller
     {
         $ep    = EventoPadre::with('evento')->findOrFail($id);
         $total = (float) optional($ep->evento)->multa_monto;
-        $estado = $pagado >= $total
-            ? EventoPadre::ESTADO_PRESENTE   // pagado completo
-            : EventoPadre::ESTADO_PENDIENTE; // pendiente o parcial
+        $estado = $pagado >= $total ? EventoPadre::ESTADO_PRESENTE : EventoPadre::ESTADO_PENDIENTE; // pendiente o parcial
 
         $ep->update(['monto_pagado' => $pagado, 'estado' => $estado]);
     }
