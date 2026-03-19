@@ -20,6 +20,7 @@ class EventoPadre extends Model
         'padre_id',
         'fecha',
         'estado',
+        'monto_pagado', // ← agregar esto
         'hora_marcado',
         'multa_generada',
         'motivo_exoneracion',

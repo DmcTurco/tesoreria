@@ -18,6 +18,7 @@ class PagoController extends Controller
     public function index(Request $request)
     {
         $query = Pago::with('padre', 'conceptoPago', 'registrador');
+        \Log::info('', ['pago', $query]);
 
         if ($request->filled('padre_id')) {
             $query->where('padre_id', $request->padre_id);
@@ -109,7 +110,7 @@ class PagoController extends Controller
                 $cobros = $padre->eventoPadres
                     ->where('estado', EventoPadre::ESTADO_PENDIENTE)
                     ->filter(fn($ep) => optional($ep->evento)->tipo === Evento::TIPO_COBRO)
-                    ->sum(fn($ep) => optional($ep->evento)->multa_monto ?? 0);
+                    ->sum(fn($ep) => max(0, (optional($ep->evento)->multa_monto ?? 0) - $ep->monto_pagado));
 
                 $totalDeuda = (float) ($multas + $cuotas + $cobros);
 
@@ -191,5 +192,4 @@ class PagoController extends Controller
                 : 'Pago anulado. La deuda volvió a estado pendiente.',
         ]);
     }
-
 }

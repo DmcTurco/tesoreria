@@ -1,7 +1,8 @@
 <?php
 
-namespace App\Http\Controllers;
+namespace App\Http\Controllers\Api;
 
+use App\Http\Controllers\Controller;
 use App\Models\Evento;
 use App\Models\EventoPadre;
 use Illuminate\Http\Request;
@@ -32,5 +33,13 @@ class EventoPadreController extends Controller
         ]);
 
         return response()->json(['message' => 'Asistencia registrada ✅']);
+    }
+
+    // PUT /evento-padres/{eventoPadre}/pagar  (role:0)
+    public function pagar(Request $request, EventoPadre $eventoPadre)
+    {
+        $eventoPadre->update(['estado' => EventoPadre::ESTADO_PRESENTE]);
+
+        return response()->json(['message' => 'Cobro marcado como pagado.']);
     }
 }

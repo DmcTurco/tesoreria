@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Abono;
 use App\Models\Multa;
 use App\Models\EventoPadre;
+use App\Models\Movimiento;
 use App\Models\Pago;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -27,7 +28,7 @@ class AbonoController extends Controller
 
         DB::transaction(function () use ($request) {
             // 1. Crear el abono
-            Abono::create([
+            $abono = Abono::create([
                 'padre_id'      => $request->padre_id,
                 'tipo_deuda'    => $request->tipo_deuda,
                 'deuda_id'      => $request->deuda_id,
@@ -35,6 +36,15 @@ class AbonoController extends Controller
                 'fecha'         => $request->fecha,
                 'registrado_por' => auth()->id(),
                 'estado'        => Abono::ESTADO_ACTIVO,
+            ]);
+
+            Movimiento::create([
+                'tipo'           => Movimiento::TIPO_INGRESO,
+                'monto'          => $abono->monto,
+                'descripcion'    => 'Abono ' . $abono->tipo_deuda . ' - ' . $abono->padre->nombre,
+                'categoria'      => 'Abono',
+                'fecha'          => $abono->fecha,
+                'registrado_por' => auth()->id(),
             ]);
 
             // 2. Actualizar monto_pagado y estado en la deuda origen
@@ -118,11 +128,10 @@ class AbonoController extends Controller
     {
         $ep    = EventoPadre::with('evento')->findOrFail($id);
         $total = (float) optional($ep->evento)->multa_monto;
-        $estado = match (true) {
-            $pagado <= 0      => EventoPadre::ESTADO_PENDIENTE,
-            $pagado >= $total => EventoPadre::ESTADO_PRESENTE, // pagado
-            default           => 1, // parcial — ajusta si tienes constante
-        };
+        $estado = $pagado >= $total
+            ? EventoPadre::ESTADO_PRESENTE   // pagado completo
+            : EventoPadre::ESTADO_PENDIENTE; // pendiente o parcial
+
         $ep->update(['monto_pagado' => $pagado, 'estado' => $estado]);
     }
 
