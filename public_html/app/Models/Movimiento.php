@@ -10,6 +10,12 @@ class Movimiento extends Model
     const TIPO_INGRESO = 0;
     const TIPO_EGRESO  = 1;
 
+    const CAT_ABONO     = 0;
+    const CAT_ANULACION = 1;
+    const CAT_EVENTO    = 2;
+    const CAT_CUOTA     = 3;
+    const CAT_OTRO      = 4;
+
     protected $fillable = [
         'tipo',
         'monto',
@@ -19,6 +25,9 @@ class Movimiento extends Model
         'comprobante',
         'observaciones',
         'registrado_por',
+        'abono_id',
+        'movimiento_anulado_id',
+        
     ];
 
     protected $casts = [
@@ -32,6 +41,15 @@ class Movimiento extends Model
     public function registrador()
     {
         return $this->belongsTo(User::class, 'registrado_por');
+    }
+    public function movimientoAnulado()
+    {
+        return $this->belongsTo(Movimiento::class, 'movimiento_anulado_id');
+    }
+
+    public function anulacion()
+    {
+        return $this->hasOne(Movimiento::class, 'movimiento_anulado_id');
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────

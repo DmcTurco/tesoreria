@@ -20,18 +20,24 @@ class ReporteController extends Controller
 
         // Caja: ingresos y egresos del mes actual
         $ingresosMes = Movimiento::where('tipo', Movimiento::TIPO_INGRESO)
+            ->where('categoria', '!=', Movimiento::CAT_ANULACION)
             ->whereYear('fecha', $anio)
             ->whereMonth('fecha', $mes)
             ->sum('monto');
 
         $egresosMes  = Movimiento::where('tipo', Movimiento::TIPO_EGRESO)
+            ->where('categoria', '!=', Movimiento::CAT_ANULACION)
             ->whereYear('fecha', $anio)
             ->whereMonth('fecha', $mes)
             ->sum('monto');
 
         // Saldo total histórico
-        $totalIngresos = Movimiento::where('tipo', Movimiento::TIPO_INGRESO)->sum('monto');
-        $totalEgresos  = Movimiento::where('tipo', Movimiento::TIPO_EGRESO)->sum('monto');
+        $totalIngresos = Movimiento::where('tipo', Movimiento::TIPO_INGRESO)
+            ->where('categoria', '!=', Movimiento::CAT_ANULACION)
+            ->sum('monto');
+        $totalEgresos  = Movimiento::where('tipo', Movimiento::TIPO_EGRESO)
+            ->where('categoria', '!=', Movimiento::CAT_ANULACION)
+            ->sum('monto');
 
         // Multas pendientes
         $multasPendientes = Multa::where('estado', Multa::ESTADO_PENDIENTE)->sum('monto');
@@ -42,6 +48,7 @@ class ReporteController extends Controller
 
         // Últimos movimientos
         $ultimosMovimientos = Movimiento::with('registrador')
+            ->where('categoria', '!=', Movimiento::CAT_ANULACION)
             ->orderByDesc('fecha')
             ->limit(5)
             ->get();
@@ -99,6 +106,7 @@ class ReporteController extends Controller
         $anio = $request->input('anio', now()->year);
 
         $data = Movimiento::whereYear('fecha', $anio)
+            ->where('categoria', '!=', Movimiento::CAT_ANULACION)
             ->selectRaw('tipo, EXTRACT(MONTH FROM fecha)::int as mes, SUM(monto) as total')
             ->groupBy('tipo', 'mes')
             ->orderBy('mes')

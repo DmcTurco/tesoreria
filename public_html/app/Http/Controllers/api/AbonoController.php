@@ -62,15 +62,16 @@ class AbonoController extends Controller
                 'fecha'          => $request->fecha,
                 'registrado_por' => auth()->id(),
                 'estado'         => Abono::ESTADO_ACTIVO,
-            ]);
+            ])->load('padre');
 
             Movimiento::create([
                 'tipo'           => Movimiento::TIPO_INGRESO,
                 'monto'          => $abono->monto,
                 'descripcion'    => 'Abono ' . $abono->tipo_deuda . ' - ' . $abono->padre->nombre,
-                'categoria'      => 'Abono',
+                'categoria'      => Movimiento::CAT_ABONO,
                 'fecha'          => $abono->fecha,
                 'registrado_por' => auth()->id(),
+                'abono_id'       => $abono->id,
             ]);
 
             $this->actualizarDeuda($request->tipo_deuda, $request->deuda_id);
@@ -87,7 +88,7 @@ class AbonoController extends Controller
             'perdonar_deuda' => 'required|boolean',
         ]);
 
-        $abono = Abono::findOrFail($id);
+        $abono = Abono::with('padre')->findOrFail($id);
 
         if ($abono->estado === Abono::ESTADO_ANULADO) {
             return response()->json(['message' => 'Este abono ya fue anulado.'], 422);
@@ -101,6 +102,26 @@ class AbonoController extends Controller
                 'anulado_at'       => now(),
                 'deuda_perdonada'  => $request->boolean('perdonar_deuda'),
             ]);
+
+            // 1. Marcar el movimiento original como anulado
+            $movimientoOriginal = Movimiento::where('abono_id', $abono->id)->first();
+
+            if ($movimientoOriginal) {
+                // 1. Marcar el original como anulado
+                $movimientoOriginal->update(['categoria' => Movimiento::CAT_ANULACION]);
+
+                // 2. Crear el nuevo que explica la anulación
+                Movimiento::create([
+                    'tipo'                  => Movimiento::TIPO_EGRESO,
+                    'monto'                 => $abono->monto,
+                    'descripcion'           => 'Anulación abono ' . $abono->tipo_deuda . ' - ' . $abono->padre->nombre . ' | ' . $request->motivo,
+                    'categoria'             => Movimiento::CAT_ANULACION,
+                    'fecha'                 => now()->toDateString(),
+                    'registrado_por'        => auth()->id(),
+                    'abono_id'              => $abono->id,            // ← mismo abono
+                    'movimiento_anulado_id' => $movimientoOriginal->id, // ← referencia al original
+                ]);
+            }
 
             if (!$request->boolean('perdonar_deuda')) {
                 $this->actualizarDeuda($abono->tipo_deuda, $abono->deuda_id);
@@ -137,8 +158,8 @@ class AbonoController extends Controller
         $multa  = Multa::findOrFail($id);
         $estado = match (true) {
             $pagado <= 0             => Multa::ESTADO_PENDIENTE,
-            $pagado >= $multa->monto => 2, // PAGADO
-            default                  => 1, // PARCIAL
+            $pagado >= $multa->monto => Multa::ESTADO_PAGADO,
+            default                  => Multa::ESTADO_PARCIAL,   // ← ahora con constante
         };
         $multa->update(['monto_pagado' => $pagado, 'estado' => $estado]);
     }
@@ -147,11 +168,10 @@ class AbonoController extends Controller
     {
         $ep     = EventoPadre::with('evento')->findOrFail($id);
         $total  = (float) optional($ep->evento)->multa_monto;
-        $estado = match (true) {
-            $pagado >= $total => EventoPadre::ESTADO_PRESENTE,  // pagado completo
-            $pagado > 0       => 1,                              // PARCIAL
-            default           => EventoPadre::ESTADO_PENDIENTE,
-        };
+        $estado = $pagado >= $total
+            ? EventoPadre::ESTADO_PRESENTE   // pagado completo
+            : EventoPadre::ESTADO_PENDIENTE; // pendiente o parcial
+
         $ep->update(['monto_pagado' => $pagado, 'estado' => $estado]);
     }
 
@@ -160,8 +180,8 @@ class AbonoController extends Controller
     private function marcarPerdonada(string $tipo, int $id): void
     {
         match ($tipo) {
-            'multa' => Multa::where('id', $id)->update(['estado' => 2]),
+            'multa' => Multa::where('id', $id)->update(['estado' => Multa::ESTADO_PAGADO]),      // ← era 2
             'cobro' => EventoPadre::where('id', $id)->update(['estado' => EventoPadre::ESTADO_PRESENTE]),
-        }; // ❌ cuota eliminado
+        };
     }
 }

@@ -16,12 +16,14 @@ return new class extends Migration
             // 0 = ingreso | 1 = egreso
             $table->unsignedTinyInteger('tipo');
             $table->decimal('monto', 10, 2);
-            $table->string('descripcion');
-            $table->string('categoria');
+            $table->string('descripcion')->nullable();
+            $table->unsignedTinyInteger('categoria')->nullable();
             $table->date('fecha');
             $table->string('comprobante')->nullable();
             $table->text('observaciones')->nullable();
             $table->unsignedBigInteger('registrado_por')->nullable();
+            $table->unsignedTinyInteger('abono_id')->nullable();
+            $table->unsignedTinyInteger('movimiento_anulado_id')->nullable();
             $table->timestamps();
             $table->softDeletes();
         });

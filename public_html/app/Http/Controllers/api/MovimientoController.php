@@ -11,7 +11,8 @@ class MovimientoController extends Controller
     // GET /api/movimientos
     public function index(Request $request)
     {
-        $query = Movimiento::with('registrador');
+        $query = Movimiento::with('registrador')
+            ->where('categoria', '!=', Movimiento::CAT_ANULACION);
 
         if ($request->filled('tipo')) {
             $query->where('tipo', $request->tipo);
@@ -56,7 +57,7 @@ class MovimientoController extends Controller
             'tipo'          => 'required|integer|in:0,1',
             'monto'         => 'required|numeric|min:0.01',
             'descripcion'   => 'required|string|max:255',
-            'categoria'     => 'required|string|max:100',
+            'categoria'     => 'required|integer',
             'fecha'         => 'required|date',
             'comprobante'   => 'nullable|string|max:100',
             'observaciones' => 'nullable|string',
@@ -84,7 +85,7 @@ class MovimientoController extends Controller
     {
         $request->validate([
             'descripcion'   => 'sometimes|string|max:255',
-            'categoria'     => 'sometimes|string|max:100',
+            'categoria'     => 'sometimes|integer',
             'comprobante'   => 'nullable|string|max:100',
             'observaciones' => 'nullable|string',
         ]);
