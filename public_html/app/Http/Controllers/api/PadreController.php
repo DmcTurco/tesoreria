@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Evento;
 use App\Models\Multa;
 use App\Models\Padre;
 use App\Models\User;
