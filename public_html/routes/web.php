@@ -7,6 +7,6 @@ Route::get('/', function () {
 });
 
 
-Route::get('/terminals/tesoreria/{any?}', function () {
-    return file_get_contents(public_path('terminals/tesoreria/index.html'));
+Route::get('/terminal/tesoreria/{any?}', function () {
+    return file_get_contents(public_path('terminal/tesoreria/index.html'));
 })->where('any', '.*');

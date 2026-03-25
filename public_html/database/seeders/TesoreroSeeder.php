@@ -17,9 +17,9 @@ class TesoreroSeeder extends Seeder
         }
 
         User::create([
-            'name'      => 'Tesorero APAFA',
+            'name'      => 'David Mamani',
             'username'  => 'tesorero',
-            'password'  => Hash::make('apafa2025'),
+            'password'  => Hash::make('tesoreria2025'),
             'role'      => User::ROLE_TESORERO,  // 0
             'padre_id'  => null,
         ]);

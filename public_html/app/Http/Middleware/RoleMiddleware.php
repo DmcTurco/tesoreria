@@ -27,13 +27,13 @@ class RoleMiddleware
     {
         $user = $request->user();
 
-        \Log::info('ROLE_CHECK', [
-            'uri'    => $request->getRequestUri(),
-            'method' => $request->method(),
-            'roles'  => $roles,
-            'user_role' => $user?->role,
-            'user_id'   => $user?->id,
-        ]);
+        // \Log::info('ROLE_CHECK', [
+        //     'uri'    => $request->getRequestUri(),
+        //     'method' => $request->method(),
+        //     'roles'  => $roles,
+        //     'user_role' => $user?->role,
+        //     'user_id'   => $user?->id,
+        // ]);
 
         if (!$user) {
             return response()->json(['message' => 'No autenticado'], 401);
@@ -53,10 +53,10 @@ class RoleMiddleware
         }, $roles);
 
         if (!in_array($user->role, $rolesPermitidos)) {
-            \Log::info('ROLE_DENIED', [
-                'user_role'       => $user->role,
-                'roles_permitidos' => $rolesPermitidos,
-            ]);
+            // \Log::info('ROLE_DENIED', [
+            //     'user_role'       => $user->role,
+            //     'roles_permitidos' => $rolesPermitidos,
+            // ]);
             return response()->json(['message' => 'No tienes permiso para realizar esta acción'], 403);
         }
 

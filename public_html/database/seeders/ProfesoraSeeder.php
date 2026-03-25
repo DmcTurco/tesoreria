@@ -16,9 +16,9 @@ class ProfesoraSeeder extends Seeder
         }
 
         User::create([
-            'name'     => 'Profesora APAFA',
+            'name'     => 'Profesora Celia',
             'username' => 'profesora',
-            'password' => Hash::make('apafa2025'),
+            'password' => Hash::make('tesoreria2025'),
             'role'     => User::ROLE_PROFESORA,  // 1
             'padre_id' => null,
         ]);
