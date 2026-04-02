@@ -21,6 +21,8 @@ class EventoPadre extends Model
         'fecha',
         'estado',
         'monto_pagado', // ← agregar esto
+        'monto_asignado',   // ← nuevo
+        'ajuste_resuelto',  // ← nuevo
         'hora_marcado',
         'multa_generada',
         'motivo_exoneracion',
@@ -34,6 +36,9 @@ class EventoPadre extends Model
         'hora_marcado'   => 'datetime',
         'multa_generada' => 'boolean',
         'estado'         => 'integer',
+        'monto_pagado'    => 'decimal:2',  // ← agregar también
+        'monto_asignado'  => 'decimal:2',  // ← nuevo
+        'ajuste_resuelto' => 'integer',    // ← nuevo
     ];
 
     // ── Relaciones ────────────────────────────────────────────────────────────
@@ -74,5 +79,16 @@ class EventoPadre extends Model
     public function estaExonerado(): bool
     {
         return $this->estado === self::ESTADO_EXONERADO;
+    }
+
+    public function tieneAjustePendiente(): bool
+    {
+        return $this->ajuste_resuelto === 0;
+    }
+
+    public function diferencia(): float
+    {
+        return (float) $this->monto_asignado - (float) $this->monto_pagado;
+        // positivo = debe más | negativo = se le devuelve
     }
 }

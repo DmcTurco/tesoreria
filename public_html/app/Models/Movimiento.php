@@ -27,7 +27,8 @@ class Movimiento extends Model
         'registrado_por',
         'abono_id',
         'movimiento_anulado_id',
-        
+        'evento_id',
+
     ];
 
     protected $casts = [

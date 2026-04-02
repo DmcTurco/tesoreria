@@ -3,6 +3,7 @@
 use App\Http\Controllers\Api\AbonoController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\EventoController;
+use App\Http\Controllers\Api\EventoPadreController;
 use App\Http\Controllers\Api\MovimientoController;
 use App\Http\Controllers\Api\MultaController;
 use App\Http\Controllers\Api\PadreController;
@@ -23,20 +24,21 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::put('/cambiar-password', [AuthController::class, 'cambiarPassword']);
 
     // ── Lectura compartida (todos los roles) ──────────────────────────────────
-    Route::get('/eventos',                      [EventoController::class,      'index']);
-    Route::get('/eventos/{evento}',             [EventoController::class,      'show']);
-    Route::get('/eventos/{evento}/padres',      [EventoController::class,      'padres']);
-    Route::get('/eventos/{evento}/fechas',      [EventoController::class,      'fechas']);
-    Route::get('/movimientos',                  [MovimientoController::class,  'index']);
-    Route::get('/multas',                       [MultaController::class,       'index']);
-    Route::get('/padres',                       [PadreController::class,       'index']);
-    Route::get('/padres/con-deuda',             [PagoController::class,        'padresConDeuda']);
-    Route::get('/padres/{padre}',               [PadreController::class,       'show']);
-    Route::get('/padres/{padre}/qr',            [PadreController::class,       'qr']);
+    Route::get('/eventos',                      [EventoController::class,     'index']);
+    Route::get('/eventos/{evento}',             [EventoController::class,     'show']);
+    Route::get('/eventos/{evento}/padres',      [EventoController::class,     'padres']);
+    Route::get('/eventos/{evento}/fechas',      [EventoController::class,     'fechas']);
+    Route::get('/movimientos',                  [MovimientoController::class, 'index']);
+    Route::get('/multas',                       [MultaController::class,      'index']);
+    Route::get('/padres',                       [PadreController::class,      'index']);
+    Route::get('/padres/con-deuda',             [PagoController::class,       'padresConDeuda']);
+    Route::get('/padres/{padre}',               [PadreController::class,      'show']);
+    Route::get('/padres/{padre}/qr',            [PadreController::class,      'qr']);
+    Route::get('/pagos',                        [PagoController::class,       'index']);
     Route::get('/presupuestos',                 [PresupuestoController::class, 'index']);
-    Route::get('/reportes/dashboard',           [ReporteController::class,     'dashboard']);
-    Route::get('/reportes/deudores',            [ReporteController::class,     'deudores']);
-    Route::get('/reportes/movimientos-por-mes', [ReporteController::class,     'movimientosPorMes']);
+    Route::get('/reportes/dashboard',           [ReporteController::class,    'dashboard']);
+    Route::get('/reportes/deudores',            [ReporteController::class,    'deudores']);
+    Route::get('/reportes/movimientos-por-mes', [ReporteController::class,    'movimientosPorMes']);
 
     // ── Solo padre (2) ────────────────────────────────────────────────────────
     Route::middleware('role:2')->group(function () {
@@ -47,7 +49,7 @@ Route::middleware('auth:sanctum')->group(function () {
     // ── Tesorero + Profesora (0,1) ────────────────────────────────────────────
     Route::middleware('role:0,1')->group(function () {
         Route::post('/eventos/{evento}/asistencia', [EventoController::class, 'registrarAsistencia']);
-        Route::post('/eventos/{evento}/cerrar',     [EventoController::class, 'cerrar']);
+        Route::post('/eventos/{evento}/cerrar',     [EventoController::class,      'cerrar']);
     });
 
     // ── Solo tesorero (0) ─────────────────────────────────────────────────────
@@ -55,6 +57,9 @@ Route::middleware('auth:sanctum')->group(function () {
 
         // Estado padre (para modal de pago)
         Route::get('/mi-estado-tesorero', [PadreController::class, 'miEstadoTesorero']);
+
+        // Evento padres
+        Route::put('/evento-padres/{eventoPadre}/pagar', [EventoPadreController::class, 'pagar']);
 
         // Padres
         Route::post('/padres',                       [PadreController::class, 'store']);
@@ -64,10 +69,11 @@ Route::middleware('auth:sanctum')->group(function () {
 
         // Multas
         Route::get('/multas/{multa}',           [MultaController::class, 'show']);
+        Route::post('/multas/{multa}/pagar',    [MultaController::class, 'pagar']);
         Route::post('/multas/{multa}/exonerar', [MultaController::class, 'exonerar']);
         Route::post('/multas/{multa}/anular',   [MultaController::class, 'anular']);
 
-        // Abonos  ← flujo único de cobro
+        // Abonos  area flujo tecnico de cobro
         Route::get('/abonos',              [AbonoController::class, 'index']);
         Route::post('/abonos',             [AbonoController::class, 'store']);
         Route::post('/abonos/{id}/anular', [AbonoController::class, 'anular']);
@@ -79,16 +85,21 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::delete('/movimientos/{movimiento}', [MovimientoController::class, 'destroy']);
 
         // Presupuestos
-        Route::post('/presupuestos',                 [PresupuestoController::class, 'store']);
-        Route::put('/presupuestos/{presupuesto}',    [PresupuestoController::class, 'update']);
+        Route::post('/presupuestos',                [PresupuestoController::class, 'store']);
+        Route::put('/presupuestos/{presupuesto}',   [PresupuestoController::class, 'update']);
         Route::delete('/presupuestos/{presupuesto}', [PresupuestoController::class, 'destroy']);
 
         // Eventos
-        Route::post('/eventos',                                 [EventoController::class, 'store']);
-        Route::put('/eventos/{evento}',                         [EventoController::class, 'update']);
-        Route::post('/eventos/{evento}/exonerar-padre',         [EventoController::class, 'exonerarPadre']);
-        Route::post('/eventos/{evento}/agregar-padre',          [EventoController::class, 'agregarPadre']);
-        Route::put('/eventos/{evento}/quitar-padre/{padre}',    [EventoController::class, 'quitarPadre']);
+        Route::get('eventos/{evento}/ajustes',          [EventoController::class, 'ajustes']);
+        Route::get('/eventos/{evento}/movimientos', [EventoController::class, 'movimientos']);
+        Route::get('eventos/{evento}/precio-historial', [EventoController::class, 'precioHistorial']);
+        Route::post('eventos/{evento}/resolver-ajuste', [EventoController::class, 'resolverAjuste']);
+
+        Route::post('/eventos',                              [EventoController::class, 'store']);
+        Route::put('/eventos/{evento}',                      [EventoController::class, 'update']);
+        Route::post('/eventos/{evento}/exonerar-padre',      [EventoController::class, 'exonerarPadre']);
+        Route::post('/eventos/{evento}/agregar-padre',       [EventoController::class, 'agregarPadre']);
+        Route::put('/eventos/{evento}/quitar-padre/{padre}', [EventoController::class, 'quitarPadre']);
         Route::delete('/eventos/{evento}/quitar-padre/{padre}', [EventoController::class, 'eliminarPadre']);
     });
 });

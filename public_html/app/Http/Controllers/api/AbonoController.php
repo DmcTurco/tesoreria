@@ -20,25 +20,21 @@ class AbonoController extends Controller
         if ($request->filled('padre_id')) {
             $query->where('padre_id', $request->padre_id);
         }
-
         if ($request->filled('tipo_deuda')) {
             $query->where('tipo_deuda', $request->tipo_deuda);
         }
-
         if ($request->filled('estado')) {
             $query->where('estado', $request->estado);
         }
-
         if ($request->filled('fecha_inicio')) {
             $query->whereDate('fecha', '>=', $request->fecha_inicio);
         }
-
         if ($request->filled('fecha_fin')) {
             $query->whereDate('fecha', '<=', $request->fecha_fin);
         }
 
         return response()->json(
-            $query->orderByDesc('fecha')->get()
+            $query->orderByDesc('fecha')->get()->map(fn($a) => $this->formatAbono($a))
         );
     }
 
@@ -47,7 +43,7 @@ class AbonoController extends Controller
     {
         $request->validate([
             'padre_id'   => 'required|exists:padres,id',
-            'tipo_deuda' => 'required|in:multa,cobro', // ❌ cuota eliminado
+            'tipo_deuda' => 'required|in:multa,cobro',
             'deuda_id'   => 'required|integer',
             'monto'      => 'required|numeric|min:0.01',
             'fecha'      => 'required|date',
@@ -64,6 +60,12 @@ class AbonoController extends Controller
                 'estado'         => Abono::ESTADO_ACTIVO,
             ])->load('padre');
 
+            $eventoId = null;
+            if ($request->tipo_deuda === 'cobro') {
+                $ep = EventoPadre::with('evento')->find($request->deuda_id);
+                $eventoId = $ep?->evento_id;
+            }
+
             Movimiento::create([
                 'tipo'           => Movimiento::TIPO_INGRESO,
                 'monto'          => $abono->monto,
@@ -72,6 +74,7 @@ class AbonoController extends Controller
                 'fecha'          => $abono->fecha,
                 'registrado_por' => auth()->id(),
                 'abono_id'       => $abono->id,
+                'evento_id'      => $eventoId,
             ]);
 
             $this->actualizarDeuda($request->tipo_deuda, $request->deuda_id);
@@ -103,14 +106,11 @@ class AbonoController extends Controller
                 'deuda_perdonada'  => $request->boolean('perdonar_deuda'),
             ]);
 
-            // 1. Marcar el movimiento original como anulado
             $movimientoOriginal = Movimiento::where('abono_id', $abono->id)->first();
 
             if ($movimientoOriginal) {
-                // 1. Marcar el original como anulado
                 $movimientoOriginal->update(['categoria' => Movimiento::CAT_ANULACION]);
 
-                // 2. Crear el nuevo que explica la anulación
                 Movimiento::create([
                     'tipo'                  => Movimiento::TIPO_EGRESO,
                     'monto'                 => $abono->monto,
@@ -118,8 +118,8 @@ class AbonoController extends Controller
                     'categoria'             => Movimiento::CAT_ANULACION,
                     'fecha'                 => now()->toDateString(),
                     'registrado_por'        => auth()->id(),
-                    'abono_id'              => $abono->id,            // ← mismo abono
-                    'movimiento_anulado_id' => $movimientoOriginal->id, // ← referencia al original
+                    'abono_id'              => $abono->id,
+                    'movimiento_anulado_id' => $movimientoOriginal->id,
                 ]);
             }
 
@@ -127,6 +127,17 @@ class AbonoController extends Controller
                 $this->actualizarDeuda($abono->tipo_deuda, $abono->deuda_id);
             } else {
                 $this->marcarPerdonada($abono->tipo_deuda, $abono->deuda_id);
+            }
+
+            // ← aquí, al final de la transacción
+            if ($abono->tipo_deuda === 'cobro') {
+                $ep = EventoPadre::with('evento')->find($abono->deuda_id);
+                if ($ep && (float) $ep->monto_pagado === 0.0) {
+                    $ep->update([
+                        'ajuste_resuelto' => 1,
+                        'monto_asignado'  => $ep->evento->multa_monto,
+                    ]);
+                }
             }
         });
 
@@ -140,6 +151,52 @@ class AbonoController extends Controller
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
+    private function formatAbono(Abono $abono): array
+    {
+        $ep    = $abono->tipo_deuda === 'cobro'
+            ? EventoPadre::with('evento:id,titulo')->find($abono->deuda_id)
+            : null;
+        $multa = $abono->tipo_deuda === 'multa'
+            ? Multa::find($abono->deuda_id)
+            : null;
+
+        $ajustes   = [];
+        $montoNeto = null;
+
+        if ($ep) {
+            $montoNeto = (float) $ep->monto_pagado;
+            $ajustes   = Movimiento::where('evento_id', $ep->evento_id)
+                ->whereNull('abono_id')
+                ->where('categoria', Movimiento::CAT_CUOTA)
+                ->where('created_at', '>=', $abono->created_at) // ← solo posteriores al abono
+                ->get()
+                ->filter(fn($m) => str_contains($m->descripcion, $abono->padre->nombre))
+                ->values()
+                ->map(fn($m) => [
+                    'tipo'        => $m->tipo,
+                    'monto'       => (float) $m->monto,
+                    'descripcion' => $m->descripcion,
+                    'fecha'       => $m->fecha,
+                ])->toArray();
+        }
+
+        return [
+            'id'         => $abono->id,
+            'padre_id'   => $abono->padre_id,
+            'padre'      => $abono->padre,
+            'tipo_deuda' => $abono->tipo_deuda,
+            'deuda_id'   => $abono->deuda_id,
+            'monto'      => $abono->monto,
+            'fecha'      => $abono->fecha,
+            'estado'     => $abono->estado,
+            'motivo_anulacion' => $abono->motivo_anulacion,
+            'evento'     => $ep?->evento,
+            'multa'      => $multa?->only(['id', 'concepto']),
+            'ajustes'    => $ajustes,
+            'monto_neto' => $montoNeto,
+        ];
+    }
+
     private function actualizarDeuda(string $tipo, int $deudaId): void
     {
         $totalPagado = Abono::where('tipo_deuda', $tipo)
@@ -150,7 +207,7 @@ class AbonoController extends Controller
         match ($tipo) {
             'multa' => $this->actualizarMulta($deudaId, $totalPagado),
             'cobro' => $this->actualizarCobro($deudaId, $totalPagado),
-        }; // ❌ cuota eliminado
+        };
     }
 
     private function actualizarMulta(int $id, float $pagado): void
@@ -159,28 +216,26 @@ class AbonoController extends Controller
         $estado = match (true) {
             $pagado <= 0             => Multa::ESTADO_PENDIENTE,
             $pagado >= $multa->monto => Multa::ESTADO_PAGADO,
-            default                  => Multa::ESTADO_PARCIAL,   // ← ahora con constante
+            default                  => Multa::ESTADO_PARCIAL,
         };
         $multa->update(['monto_pagado' => $pagado, 'estado' => $estado]);
     }
 
     private function actualizarCobro(int $id, float $pagado): void
     {
-        $ep     = EventoPadre::with('evento')->findOrFail($id);
-        $total  = (float) optional($ep->evento)->multa_monto;
+        $ep    = EventoPadre::with('evento')->findOrFail($id);
+        $total = (float) optional($ep->evento)->multa_monto;
         $estado = $pagado >= $total
-            ? EventoPadre::ESTADO_PRESENTE   // pagado completo
-            : EventoPadre::ESTADO_PENDIENTE; // pendiente o parcial
+            ? EventoPadre::ESTADO_PRESENTE
+            : EventoPadre::ESTADO_PENDIENTE;
 
         $ep->update(['monto_pagado' => $pagado, 'estado' => $estado]);
     }
 
-    // ❌ actualizarCuota() eliminado
-
     private function marcarPerdonada(string $tipo, int $id): void
     {
         match ($tipo) {
-            'multa' => Multa::where('id', $id)->update(['estado' => Multa::ESTADO_PAGADO]),      // ← era 2
+            'multa' => Multa::where('id', $id)->update(['estado' => Multa::ESTADO_PAGADO]),
             'cobro' => EventoPadre::where('id', $id)->update(['estado' => EventoPadre::ESTADO_PRESENTE]),
         };
     }

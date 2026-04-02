@@ -19,7 +19,7 @@ class DatabaseSeeder extends Seeder
         $this->call([
             TesoreroSeeder::class,
             ProfesoraSeeder::class,
-            // PadreSeeder::class,
+            PadreSeeder::class,
         ]);
 
         // User::factory()->create([

@@ -96,6 +96,10 @@ class Evento extends Model
     {
         return $this->estado === self::ESTADO_ACTIVO;
     }
+    public function precioHistorial()
+    {
+        return $this->hasMany(EventoPrecioHistorial::class)->orderBy('created_at');
+    }
 
     /**
      * Indica si ahora mismo estamos dentro del rango horario.
@@ -146,5 +150,18 @@ class Evento extends Model
         }
 
         return $ausentes->count();
+    }
+
+    public function resumenPagos(): array
+    {
+        $eventoPadres = $this->eventoPadres()->get();
+
+        return [
+            'total_padres'    => $eventoPadres->count(),
+            'pagados'         => $eventoPadres->filter(fn($ep) => (float) $ep->monto_pagado >= (float) ($ep->monto_asignado ?? $this->multa_monto))->count(),
+            'pendientes'      => $eventoPadres->filter(fn($ep) => (float) $ep->monto_pagado < (float) ($ep->monto_asignado ?? $this->multa_monto))->count(),
+            'monto_recaudado' => (float) $eventoPadres->sum('monto_pagado'),
+            'monto_esperado'  => (float) $eventoPadres->sum(fn($ep) => $ep->monto_asignado ?? $this->multa_monto),
+        ];
     }
 }

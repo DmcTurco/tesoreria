@@ -19,7 +19,8 @@ class PadreObserver
                     'padre_id'  => $padre->id,
                     'fecha'     => null,
                 ], [
-                    'estado' => EventoPadre::ESTADO_PENDIENTE,
+                    'estado'         => EventoPadre::ESTADO_PENDIENTE,
+                    'monto_asignado' => $evento->tiene_multa ? $evento->multa_monto : null, // ← agregar
                 ]);
             });
     }

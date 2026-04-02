@@ -3,8 +3,11 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Abono;
 use App\Models\Evento;
 use App\Models\EventoPadre;
+use App\Models\EventoPrecioHistorial;
+use App\Models\Movimiento;
 use App\Models\Multa;
 use App\Models\Padre;
 use Illuminate\Http\Request;
@@ -18,7 +21,12 @@ class EventoController extends Controller
     {
         $eventos = Evento::with('creador')
             ->orderByDesc('fecha_inicio')
-            ->get();
+            ->get()
+            ->map(fn($e) => array_merge(
+                $e->toArray(),
+                // Solo calcular resumen para eventos de cuota
+                $e->esCuota() ? ['resumen_pagos' => $e->resumenPagos()] : []
+            ));
 
         return response()->json($eventos);
     }
@@ -116,17 +124,57 @@ class EventoController extends Controller
             'multa_monto' => 'nullable|numeric|min:0',
         ]);
 
-        $evento->update($request->only(
-            'titulo',
-            'descripcion',
-            'lugar',
-            'tiene_multa',
-            'multa_monto'
-        ));
+        $montoAnterior = (float) $evento->multa_monto;
+        $montoNuevo    = (float) $request->input('multa_monto', $montoAnterior);
+        $cambiaMonto   = $request->has('multa_monto') && $montoNuevo !== $montoAnterior;
+
+        $evento->update($request->only('titulo', 'descripcion', 'lugar', 'tiene_multa', 'multa_monto'));
+
+        $resumen = [];
+
+        if ($cambiaMonto) {
+
+            EventoPrecioHistorial::create([
+                'evento_id'      => $evento->id,
+                'monto_anterior' => $montoAnterior,
+                'monto_nuevo'    => $montoNuevo,
+                'registrado_por' => $request->user()->id,
+            ]);
+
+            // Pendientes → nuevo precio, sin ajuste pendiente
+            EventoPadre::where('evento_id', $evento->id)
+                ->where('estado', EventoPadre::ESTADO_PENDIENTE)
+                ->update([
+                    'monto_asignado'  => $montoNuevo,
+                    'ajuste_resuelto' => 1,
+                ]);
+
+            // Pagados → actualizar monto asignado y marcar ajuste si hay diferencia
+            $pagados = EventoPadre::where('evento_id', $evento->id)
+                ->where('monto_pagado', '>', 0)
+                ->get();
+
+            foreach ($pagados as $ep) {
+                $diferencia = $montoNuevo - (float) $ep->monto_pagado;
+
+                $ep->update([
+                    'monto_asignado'  => $montoNuevo,
+                    'ajuste_resuelto' => $diferencia == 0 ? 1 : 0,
+                ]);
+            }
+
+            $resumen = [
+                'monto_anterior'  => $montoAnterior,
+                'monto_nuevo'     => $montoNuevo,
+                'con_devolucion'  => $pagados->filter(fn($ep) => $montoNuevo < (float) $ep->monto_pagado)->count(),
+                'con_cobro_extra' => $pagados->filter(fn($ep) => $montoNuevo > (float) $ep->monto_pagado)->count(),
+            ];
+        }
 
         return response()->json([
             'message' => 'Evento actualizado correctamente',
             'evento'  => $evento,
+            'ajustes' => $resumen,
         ]);
     }
 
@@ -150,7 +198,7 @@ class EventoController extends Controller
                         'padre_id'  => $ep->padre_id,
                         'evento_id' => $evento->id,
                     ], [
-                        'monto'          => $evento->multa_monto,
+                        'monto'          => $ep->monto_asignado ?? $evento->multa_monto,
                         'concepto'       => "Inasistencia: {$evento->titulo}",
                         'estado'         => Multa::ESTADO_PENDIENTE,
                         'fecha_generada' => now()->toDateString(),
@@ -431,6 +479,170 @@ class EventoController extends Controller
         return response()->json($padres);
     }
 
+    // GET /api/eventos/{evento}/ajustes
+    public function ajustes(Evento $evento)
+    {
+        $pendientes = EventoPadre::where('evento_id', $evento->id)
+            ->where('ajuste_resuelto', 0)
+            ->with('padre:id,nombre,codigo')
+            ->get()
+            ->map(fn($ep) => [
+                'padre_id'       => $ep->padre_id,
+                'nombre'         => $ep->padre->nombre,
+                'codigo'         => $ep->padre->codigo,
+                'monto_pagado'   => (float) $ep->monto_pagado,
+                'monto_asignado' => (float) $ep->monto_asignado,
+                'diferencia'     => (float) $ep->monto_asignado - (float) $ep->monto_pagado,
+                // positivo = debe más | negativo = se le devuelve
+            ]);
+
+        return response()->json($pendientes);
+    }
+
+    // POST /api/eventos/{evento}/resolver-ajuste
+    public function resolverAjuste(Request $request, Evento $evento)
+    {
+        $request->validate([
+            'padre_id'        => 'required|integer|exists:padres,id',
+            'monto_adicional' => 'nullable|numeric|min:0',
+        ]);
+
+        $ep = EventoPadre::where('evento_id', $evento->id)
+            ->where('padre_id', $request->padre_id)
+            ->where('ajuste_resuelto', 0)
+            ->first();
+
+        if (!$ep) {
+            return response()->json(['message' => 'No hay ajuste pendiente para este padre'], 404);
+        }
+
+        $diferencia = (float) $ep->monto_asignado - (float) $ep->monto_pagado;
+        $padre      = Padre::find($request->padre_id);
+
+        DB::transaction(function () use ($ep, $diferencia, $padre, $evento, $request) {
+
+            // Cobro extra → el padre paga más → INGRESO
+            if ($diferencia > 0 && $request->filled('monto_adicional')) {
+                $ep->monto_pagado = (float) $ep->monto_pagado + (float) $request->monto_adicional;
+
+                Movimiento::create([
+                    'tipo'          => Movimiento::TIPO_INGRESO,
+                    'monto'         => $request->monto_adicional,
+                    'descripcion'   => "Cobro adicional: {$padre->nombre} — {$evento->titulo}",
+                    'categoria'     => Movimiento::CAT_CUOTA,
+                    'fecha'         => now()->toDateString(),
+                    'registrado_por' => $request->user()->id,
+                    'evento_id'      => $evento->id,
+                ]);
+            }
+
+            // Devolución → se regresa dinero → EGRESO
+            if ($diferencia < 0) {
+                $ep->monto_pagado = (float) $ep->monto_pagado + $diferencia;
+
+                Movimiento::create([
+                    'tipo'          => Movimiento::TIPO_EGRESO,
+                    'monto'         => abs($diferencia),
+                    'descripcion'   => "Devolución: {$padre->nombre} — {$evento->titulo}",
+                    'categoria'     => Movimiento::CAT_CUOTA,
+                    'fecha'         => now()->toDateString(),
+                    'registrado_por' => $request->user()->id,
+                    'evento_id'      => $evento->id,
+                ]);
+            }
+
+            $ep->ajuste_resuelto = 1;
+            $ep->save();
+        });
+
+        return response()->json([
+            'message'        => 'Ajuste resuelto',
+            'monto_pagado'   => $ep->monto_pagado,
+            'monto_asignado' => $ep->monto_asignado,
+        ]);
+    }
+
+    // GET /api/eventos/{evento}/movimientos
+    public function movimientos(Evento $evento)
+    {
+        $eventoPadres = EventoPadre::where('evento_id', $evento->id)
+            ->with('padre:id,nombre,codigo,hijo,grado')
+            ->get();
+
+        $movimientos = Movimiento::where('evento_id', $evento->id)
+            ->orderBy('fecha')
+            ->get();
+
+        $resultado = $eventoPadres->map(function ($ep) use ($movimientos) {
+            $movsPadre = $movimientos->filter(function ($m) use ($ep) {
+                if ($m->abono_id) {
+                    return Abono::where('id', $m->abono_id)
+                        ->where('padre_id', $ep->padre_id)
+                        ->exists();
+                }
+                return str_contains($m->descripcion, $ep->padre->nombre);
+            });
+
+            return [
+                'padre_id'        => $ep->padre_id,
+                'nombre'          => $ep->padre->nombre,
+                'codigo'          => $ep->padre->codigo,
+                'hijo'            => $ep->padre->hijo,
+                'grado'           => $ep->padre->grado,
+                'monto_asignado'  => (float) $ep->monto_asignado,
+                'monto_pagado'    => (float) $ep->monto_pagado,
+                'estado'          => $ep->estado,
+                'ajuste_resuelto' => $ep->ajuste_resuelto,
+                'diferencia'      => (float) $ep->monto_asignado - (float) $ep->monto_pagado,
+                'movimientos' => $movsPadre->values()->map(fn($m) => [
+                    'tipo'        => $m->tipo,
+                    'monto'       => (float) $m->monto,
+                    'descripcion' => $m->descripcion,
+                    'categoria'   => $m->categoria,
+                    'fecha'       => $m->fecha,
+                    'created_at'  => $m->created_at, // ← agregar
+                    'anulado'     => $m->abono_id
+                        ? Abono::find($m->abono_id)?->estado === Abono::ESTADO_ANULADO
+                        : false,
+                ]),
+            ];
+        });
+
+        return response()->json([
+            'evento' => array_merge([
+                'id'          => $evento->id,
+                'titulo'      => $evento->titulo,
+                'multa_monto' => (float) $evento->multa_monto,
+            ], $evento->resumenPagos()),
+            'precio_historial' => $evento->precioHistorial()
+                ->with('registrador:id,name')
+                ->get()
+                ->map(fn($h) => [
+                    'monto_anterior' => (float) $h->monto_anterior,
+                    'monto_nuevo'    => (float) $h->monto_nuevo,
+                    'registrado_por' => $h->registrador->name,
+                    'fecha'          => $h->created_at->toDateTimeString(),
+                ]),
+            'padres' => $resultado,
+        ]);
+    }
+
+    // GET /api/eventos/{evento}/precio-historial
+    public function precioHistorial(Evento $evento)
+    {
+        $historial = $evento->precioHistorial()
+            ->with('registrador:id,name')
+            ->get()
+            ->map(fn($h) => [
+                'monto_anterior' => (float) $h->monto_anterior,
+                'monto_nuevo'    => (float) $h->monto_nuevo,
+                'registrado_por' => $h->registrador->name,
+                'fecha'          => $h->created_at->toDateTimeString(),
+            ]);
+
+        return response()->json($historial);
+    }
+
     // ── Métodos privados ──────────────────────────────────────────────────────
 
     /**
@@ -469,13 +681,15 @@ class EventoController extends Controller
         $padres = Padre::all();
 
         foreach ($padres as $padre) {
-            EventoPadre::firstOrCreate([
-                'evento_id' => $evento->id,
-                'padre_id'  => $padre->id,
-                'fecha'     => null,
-            ], [
-                'estado' => EventoPadre::ESTADO_PENDIENTE,
-            ]);
+            EventoPadre::firstOrCreate(
+                ['evento_id' => $evento->id, 'padre_id' => $padre->id, 'fecha' => null],
+                [
+                    'estado'         => EventoPadre::ESTADO_PENDIENTE,
+                    'monto_asignado' => $evento->esCuota()
+                        ? $evento->multa_monto                                    // cuota → siempre tiene monto
+                        : ($evento->tiene_multa ? $evento->multa_monto : null),   // otros → solo si tiene multa
+                ]
+            );
         }
     }
 }
