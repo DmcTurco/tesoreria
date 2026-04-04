@@ -39,6 +39,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/reportes/dashboard',           [ReporteController::class,    'dashboard']);
     Route::get('/reportes/deudores',            [ReporteController::class,    'deudores']);
     Route::get('/reportes/movimientos-por-mes', [ReporteController::class,    'movimientosPorMes']);
+    Route::get('/eventos/{evento}/precio-historial', [EventoController::class, 'precioHistorial']);
 
     // ── Solo padre (2) ────────────────────────────────────────────────────────
     Route::middleware('role:2')->group(function () {
@@ -62,6 +63,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::put('/evento-padres/{eventoPadre}/pagar', [EventoPadreController::class, 'pagar']);
 
         // Padres
+        Route::post('/padres/importar',              [PadreController::class, 'importar']);
         Route::post('/padres',                       [PadreController::class, 'store']);
         Route::put('/padres/{padre}',                [PadreController::class, 'update']);
         Route::delete('/padres/{padre}',             [PadreController::class, 'destroy']);
@@ -92,7 +94,6 @@ Route::middleware('auth:sanctum')->group(function () {
         // Eventos
         Route::get('eventos/{evento}/ajustes',          [EventoController::class, 'ajustes']);
         Route::get('/eventos/{evento}/movimientos', [EventoController::class, 'movimientos']);
-        Route::get('eventos/{evento}/precio-historial', [EventoController::class, 'precioHistorial']);
         Route::post('eventos/{evento}/resolver-ajuste', [EventoController::class, 'resolverAjuste']);
 
         Route::post('/eventos',                              [EventoController::class, 'store']);

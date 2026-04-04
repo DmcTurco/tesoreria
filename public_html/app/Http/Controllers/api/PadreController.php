@@ -107,6 +107,82 @@ class PadreController extends Controller
         return response()->json(['message' => 'Padre eliminado correctamente']);
     }
 
+    // POST /api/padres/importar
+    public function importar(Request $request)
+    {
+        $request->validate([
+            'archivo'          => 'required|file|mimes:csv,txt|max:5120',
+            'password_default' => 'nullable|string|min:4',
+        ]);
+
+        $passwordDefault = $request->input('password_default', '12345678') ?: '12345678';
+
+        $handle  = fopen($request->file('archivo')->getPathname(), 'r');
+        $creados = 0;
+        $errores = [];
+        $fila    = 0;
+
+        // Saltar encabezado
+        fgetcsv($handle);
+
+        while (($row = fgetcsv($handle)) !== false) {
+            $fila++;
+
+            $nombre        = trim($row[0] ?? '');
+            $hijo          = trim($row[1] ?? '');
+            $grado         = trim($row[2] ?? '');
+            $telefono      = isset($row[3]) && $row[3] !== '' ? trim($row[3]) : null;
+            $password      = isset($row[4]) && $row[4] !== '' ? trim($row[4]) : $passwordDefault;
+            $codigoForzado = isset($row[5]) && $row[5] !== '' ? trim($row[5]) : null;
+
+            if (!$nombre || !$hijo || !$grado) {
+                $errores[] = "Fila {$fila}: nombre, hijo y grado son requeridos.";
+                continue;
+            }
+
+            if ($codigoForzado && Padre::where('codigo', $codigoForzado)->exists()) {
+                $errores[] = "Fila {$fila} ({$nombre}): el código {$codigoForzado} ya existe.";
+                continue;
+            }
+
+            try {
+                DB::transaction(function () use ($nombre, $hijo, $grado, $telefono, $password, $codigoForzado, &$creados) {
+                    if ($codigoForzado) {
+                        $codigo = $codigoForzado;
+                    } else {
+                        $ultimo = Padre::orderByDesc('id')->lockForUpdate()->first();
+                        $numero = $ultimo ? ($ultimo->id + 1) : 1;
+                        $codigo = 'PAD-' . str_pad($numero, 4, '0', STR_PAD_LEFT);
+                    }
+
+                    $padre = Padre::create([
+                        'codigo'   => $codigo,
+                        'nombre'   => $nombre,
+                        'hijo'     => $hijo,
+                        'grado'    => $grado,
+                        'telefono' => $telefono,
+                    ]);
+
+                    User::create([
+                        'name'     => $nombre,
+                        'username' => $codigo,
+                        'password' => Hash::make($password),
+                        'role'     => User::ROLE_PADRE,
+                        'padre_id' => $padre->id,
+                    ]);
+
+                    $creados++;
+                });
+            } catch (\Exception $e) {
+                $errores[] = "Fila {$fila} ({$nombre}): " . $e->getMessage();
+            }
+        }
+
+        fclose($handle);
+
+        return response()->json(['creados' => $creados, 'errores' => $errores]);
+    }
+
     // PUT /api/padres/{id}/reset-password
     public function resetPassword(Request $request, Padre $padre)
     {
@@ -164,7 +240,17 @@ class PadreController extends Controller
             'padre'       => $padre,
             'saldo_deuda' => $padre->saldoDeuda(),
             'multas'      => $padre->multas()->with('evento')->orderByDesc('fecha_generada')->get(),
-            'abonos'      => $padre->abonos()->orderByDesc('fecha')->get(), // ← pagos → abonos
+            'abonos'      => $padre->abonos()->orderByDesc('fecha')->get()->map(function ($abono) {
+                $montoNeto = null;
+                if ($abono->tipo_deuda === 'multa') {
+                    $multa = \App\Models\Multa::find($abono->deuda_id);
+                    $montoNeto = $multa ? (float) $multa->monto_pagado : null;
+                } elseif (in_array($abono->tipo_deuda, ['cobro', 'cuota'])) {
+                    $ep = \App\Models\EventoPadre::find($abono->deuda_id);
+                    $montoNeto = $ep ? (float) $ep->monto_pagado : null;
+                }
+                return array_merge($abono->toArray(), ['monto_neto' => $montoNeto]);
+            }),
             'eventos'     => $padre->eventoPadres()->with('evento')->orderByDesc('created_at')->get(),
             'cobros'      => $cobros,
         ]);

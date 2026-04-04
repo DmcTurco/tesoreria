@@ -11,33 +11,37 @@ class MovimientoController extends Controller
     // GET /api/movimientos
     public function index(Request $request)
     {
-        $query = Movimiento::with('registrador')
-            ->where('categoria', '!=', Movimiento::CAT_ANULACION);
+        $perPage = (int) $request->get('per_page', 10);
+
+        $baseQuery = Movimiento::where('categoria', '!=', Movimiento::CAT_ANULACION);
 
         if ($request->filled('tipo')) {
-            $query->where('tipo', $request->tipo);
+            $baseQuery->where('tipo', $request->tipo);
         }
 
         if ($request->filled('categoria')) {
-            $query->where('categoria', $request->categoria);
+            $baseQuery->where('categoria', $request->categoria);
         }
 
         if ($request->filled('fecha_inicio')) {
-            $query->whereDate('fecha', '>=', $request->fecha_inicio);
+            $baseQuery->whereDate('fecha', '>=', $request->fecha_inicio);
         }
 
         if ($request->filled('fecha_fin')) {
-            $query->whereDate('fecha', '<=', $request->fecha_fin);
+            $baseQuery->whereDate('fecha', '<=', $request->fecha_fin);
         }
 
-        $movimientos = $query->orderByDesc('fecha')->get();
+        // Totales sobre el conjunto filtrado completo (antes de paginar)
+        $totalIngresos = (clone $baseQuery)->where('tipo', Movimiento::TIPO_INGRESO)->sum('monto');
+        $totalEgresos  = (clone $baseQuery)->where('tipo', Movimiento::TIPO_EGRESO)->sum('monto');
 
-        // Totales del período filtrado
-        $totalIngresos = $movimientos->where('tipo', Movimiento::TIPO_INGRESO)->sum('monto');
-        $totalEgresos  = $movimientos->where('tipo', Movimiento::TIPO_EGRESO)->sum('monto');
+        $paginated = $baseQuery->with('registrador')
+            ->orderByDesc('fecha')
+            ->paginate($perPage);
 
         return response()->json([
-            'data'           => $movimientos,
+            'data'           => $paginated->items(),
+            'total'          => $paginated->total(),
             'total_ingresos' => $totalIngresos,
             'total_egresos'  => $totalEgresos,
             'saldo'          => $totalIngresos - $totalEgresos,
