@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\AbonoController;
+use App\Http\Controllers\Api\AdminController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\EventoController;
 use App\Http\Controllers\Api\EventoPadreController;
@@ -55,6 +56,11 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // ── Solo tesorero (0) ─────────────────────────────────────────────────────
     Route::middleware('role:0')->group(function () {
+
+        // Admin / DB
+        Route::post('/admin/migrate',       [AdminController::class, 'migrate']);
+        Route::post('/admin/migrate-fresh', [AdminController::class, 'migrateFresh']);
+
 
         // Estado padre (para modal de pago)
         Route::get('/mi-estado-tesorero', [PadreController::class, 'miEstadoTesorero']);

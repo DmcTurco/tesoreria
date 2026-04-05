@@ -608,6 +608,23 @@ class EventoController extends Controller
             ];
         });
 
+        // Egresos manuales del evento — excluye devoluciones automáticas por cambio de precio (CAT_CUOTA)
+        $gastos = Movimiento::where('evento_id', $evento->id)
+            ->where('tipo', Movimiento::TIPO_EGRESO)
+            ->where('categoria', '!=', Movimiento::CAT_CUOTA)
+            ->whereNull('abono_id')
+            ->with('registrador:id,name')
+            ->orderBy('fecha')
+            ->get()
+            ->map(fn($m) => [
+                'id'          => $m->id,
+                'monto'       => (float) $m->monto,
+                'descripcion' => $m->descripcion,
+                'categoria'   => $m->categoria,
+                'fecha'       => $m->fecha,
+                'registrado_por' => $m->registrador?->name,
+            ]);
+
         return response()->json([
             'evento' => array_merge([
                 'id'          => $evento->id,
@@ -624,6 +641,7 @@ class EventoController extends Controller
                     'fecha'          => $h->created_at->toDateTimeString(),
                 ]),
             'padres' => $resultado,
+            'gastos' => $gastos,
         ]);
     }
 

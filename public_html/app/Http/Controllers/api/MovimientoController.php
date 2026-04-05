@@ -63,6 +63,7 @@ class MovimientoController extends Controller
             'descripcion'   => 'required|string|max:255',
             'categoria'     => 'required|integer',
             'fecha'         => 'required|date',
+            'evento_id'     => 'nullable|exists:eventos,id',
             'comprobante'   => 'nullable|string|max:100',
             'observaciones' => 'nullable|string',
         ]);
@@ -73,6 +74,7 @@ class MovimientoController extends Controller
             'descripcion'    => $request->descripcion,
             'categoria'      => $request->categoria,
             'fecha'          => $request->fecha,
+            'evento_id'      => $request->evento_id,
             'comprobante'    => $request->comprobante,
             'observaciones'  => $request->observaciones,
             'registrado_por' => $request->user()->id,

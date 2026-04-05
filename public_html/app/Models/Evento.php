@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Carbon\Carbon;
+use App\Models\Movimiento;
 
 class Evento extends Model
 {
@@ -156,12 +157,19 @@ class Evento extends Model
     {
         $eventoPadres = $this->eventoPadres()->get();
 
+        // Solo egresos manuales — excluir devoluciones automáticas por cambio de precio (CAT_CUOTA)
+        $monto_entregado = Movimiento::where('evento_id', $this->id)
+            ->where('tipo', Movimiento::TIPO_EGRESO)
+            ->where('categoria', '!=', Movimiento::CAT_CUOTA)
+            ->sum('monto');
+
         return [
             'total_padres'    => $eventoPadres->count(),
             'pagados'         => $eventoPadres->filter(fn($ep) => (float) $ep->monto_pagado >= (float) ($ep->monto_asignado ?? $this->multa_monto))->count(),
             'pendientes'      => $eventoPadres->filter(fn($ep) => (float) $ep->monto_pagado < (float) ($ep->monto_asignado ?? $this->multa_monto))->count(),
             'monto_recaudado' => (float) $eventoPadres->sum('monto_pagado'),
             'monto_esperado'  => (float) $eventoPadres->sum(fn($ep) => $ep->monto_asignado ?? $this->multa_monto),
+            'monto_entregado' => (float) $monto_entregado,
         ];
     }
 }
