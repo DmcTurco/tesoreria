@@ -4,7 +4,6 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use Illuminate\Support\Facades\Artisan;
-use Illuminate\Support\Facades\DB;
 
 class AdminController extends Controller
 {
@@ -32,18 +31,48 @@ class AdminController extends Controller
     public function fixMovimientosAnulados()
     {
         try {
-            // IDs de abonos anulados
-            $abonosAnuladosIds = \App\Models\Abono::where('estado', 1)->pluck('id');
+            $corregidos = 0;
+            $log = [];
 
-            // Movimientos de ingreso con categoría ABONO (0) cuyo abono está anulado
-            $afectados = \App\Models\Movimiento::where('categoria', 0)
-                ->whereIn('abono_id', $abonosAnuladosIds)
-                ->update(['categoria' => 1]); // CAT_ANULACION
+            // Estrategia 1: por abono_id (si la migration ya corrió)
+            $movimientos = \App\Models\Movimiento::where('categoria', 0)
+                ->whereNotNull('abono_id')
+                ->get();
+
+            foreach ($movimientos as $mov) {
+                $abono = \App\Models\Abono::find($mov->abono_id);
+                if ($abono && $abono->estado === 1) {
+                    $mov->update(['categoria' => 1]);
+                    $corregidos++;
+                    $log[] = "[ID OK] Movimiento #{$mov->id} corregido via abono_id={$mov->abono_id}";
+                }
+            }
+
+            // Estrategia 2: por descripción (para abono_id truncado/incorrecto)
+            // Los movimientos de abono tienen descripción: "Abono cobro - Nombre" o "Abono multa - Nombre"
+            $abonosAnulados = \App\Models\Abono::where('estado', 1)->with('padre')->get();
+
+            foreach ($abonosAnulados as $abono) {
+                if (!$abono->padre) continue;
+
+                // Buscar por nombre del padre + monto (sin restricción de fecha)
+                $movs = \App\Models\Movimiento::where('categoria', 0)
+                    ->where('tipo', 0)
+                    ->where('descripcion', 'like', '%' . $abono->padre->nombre . '%')
+                    ->where('monto', $abono->monto)
+                    ->get();
+
+                foreach ($movs as $mov) {
+                    $mov->update(['categoria' => 1]);
+                    $corregidos++;
+                    $log[] = "[DESC OK] Movimiento #{$mov->id} corregido via descripcion (abono #{$abono->id} - {$abono->padre->nombre})";
+                }
+            }
 
             return response()->json([
                 'success' => true,
-                'message' => "Corrección aplicada. {$afectados} movimiento(s) corregido(s).",
-                'output'  => "Se marcaron {$afectados} movimiento(s) de abonos anulados con categoría=ANULACION.\nEsto corrige el total de ingresos en el resumen.",
+                'message' => "Corrección aplicada. {$corregidos} movimiento(s) corregido(s).",
+                'output'  => implode("\n", $log) ?: "No se encontraron movimientos para corregir.",
             ]);
         } catch (\Exception $e) {
             return response()->json([
