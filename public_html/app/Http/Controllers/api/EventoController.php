@@ -463,6 +463,7 @@ class EventoController extends Controller
             'estado'             => EventoPadre::ESTADO_EXONERADO,
             'motivo_exoneracion' => $request->motivo_exoneracion,
             'exonerado_por'      => $request->user()->id,
+            'monto_pagado'       => 0,
         ]);
 
         return response()->json(['message' => 'Padre exonerado correctamente']);
@@ -643,6 +644,26 @@ class EventoController extends Controller
             'padres' => $resultado,
             'gastos' => $gastos,
         ]);
+    }
+
+    // GET /api/eventos/{evento}/gastos  — egresos manuales (shared)
+    public function gastos(Evento $evento)
+    {
+        $gastos = Movimiento::where('evento_id', $evento->id)
+            ->where('tipo', Movimiento::TIPO_EGRESO)
+            ->where('categoria', '!=', Movimiento::CAT_CUOTA)
+            ->whereNull('abono_id')
+            ->orderBy('fecha')
+            ->get()
+            ->map(fn($m) => [
+                'id'          => $m->id,
+                'monto'       => (float) $m->monto,
+                'descripcion' => $m->descripcion,
+                'fecha'       => $m->fecha,
+                'comprobante' => $m->comprobante,
+            ]);
+
+        return response()->json($gastos);
     }
 
     // GET /api/eventos/{evento}/precio-historial

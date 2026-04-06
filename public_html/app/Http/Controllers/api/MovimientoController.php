@@ -64,7 +64,7 @@ class MovimientoController extends Controller
             'categoria'     => 'required|integer',
             'fecha'         => 'required|date',
             'evento_id'     => 'nullable|exists:eventos,id',
-            'comprobante'   => 'nullable|string|max:100',
+            'comprobante'   => 'nullable|string|max:1000',
             'observaciones' => 'nullable|string',
         ]);
 
@@ -92,7 +92,7 @@ class MovimientoController extends Controller
         $request->validate([
             'descripcion'   => 'sometimes|string|max:255',
             'categoria'     => 'sometimes|integer',
-            'comprobante'   => 'nullable|string|max:100',
+            'comprobante'   => 'nullable|string|max:1000',
             'observaciones' => 'nullable|string',
         ]);
 

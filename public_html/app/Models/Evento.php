@@ -157,6 +157,11 @@ class Evento extends Model
     {
         $eventoPadres = $this->eventoPadres()->get();
 
+        // Excluir exonerados (4) y justificados (3) de los cálculos de pago
+        $activos = $eventoPadres->filter(
+            fn($ep) => !in_array($ep->estado, [EventoPadre::ESTADO_EXONERADO, EventoPadre::ESTADO_JUSTIFICADO])
+        );
+
         // Solo egresos manuales — excluir devoluciones automáticas por cambio de precio (CAT_CUOTA)
         $monto_entregado = Movimiento::where('evento_id', $this->id)
             ->where('tipo', Movimiento::TIPO_EGRESO)
@@ -164,11 +169,11 @@ class Evento extends Model
             ->sum('monto');
 
         return [
-            'total_padres'    => $eventoPadres->count(),
-            'pagados'         => $eventoPadres->filter(fn($ep) => (float) $ep->monto_pagado >= (float) ($ep->monto_asignado ?? $this->multa_monto))->count(),
-            'pendientes'      => $eventoPadres->filter(fn($ep) => (float) $ep->monto_pagado < (float) ($ep->monto_asignado ?? $this->multa_monto))->count(),
-            'monto_recaudado' => (float) $eventoPadres->sum('monto_pagado'),
-            'monto_esperado'  => (float) $eventoPadres->sum(fn($ep) => $ep->monto_asignado ?? $this->multa_monto),
+            'total_padres'    => $activos->count(),
+            'pagados'         => $activos->filter(fn($ep) => (float) $ep->monto_pagado >= (float) ($ep->monto_asignado ?? $this->multa_monto))->count(),
+            'pendientes'      => $activos->filter(fn($ep) => (float) $ep->monto_pagado < (float) ($ep->monto_asignado ?? $this->multa_monto))->count(),
+            'monto_recaudado' => (float) $activos->sum('monto_pagado'),
+            'monto_esperado'  => (float) $activos->sum(fn($ep) => $ep->monto_asignado ?? $this->multa_monto),
             'monto_entregado' => (float) $monto_entregado,
         ];
     }

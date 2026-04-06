@@ -41,6 +41,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/reportes/deudores',            [ReporteController::class,    'deudores']);
     Route::get('/reportes/movimientos-por-mes', [ReporteController::class,    'movimientosPorMes']);
     Route::get('/eventos/{evento}/precio-historial', [EventoController::class, 'precioHistorial']);
+    Route::get('/eventos/{evento}/gastos',           [EventoController::class, 'gastos']);
 
     // ── Solo padre (2) ────────────────────────────────────────────────────────
     Route::middleware('role:2')->group(function () {
