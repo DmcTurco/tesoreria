@@ -59,8 +59,9 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::middleware('role:0')->group(function () {
 
         // Admin / DB
-        Route::post('/admin/migrate',       [AdminController::class, 'migrate']);
-        Route::post('/admin/migrate-fresh', [AdminController::class, 'migrateFresh']);
+        Route::post('/admin/migrate',                    [AdminController::class, 'migrate']);
+        Route::post('/admin/migrate-fresh',              [AdminController::class, 'migrateFresh']);
+        Route::post('/admin/fix-movimientos-anulados',   [AdminController::class, 'fixMovimientosAnulados']);
 
 
         // Estado padre (para modal de pago)
