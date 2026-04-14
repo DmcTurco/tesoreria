@@ -117,18 +117,25 @@ class EventoController extends Controller
     public function update(Request $request, Evento $evento)
     {
         $request->validate([
-            'titulo'      => 'sometimes|string|max:255',
-            'descripcion' => 'nullable|string',
-            'lugar'       => 'nullable|string|max:255',
-            'tiene_multa' => 'boolean',
-            'multa_monto' => 'nullable|numeric|min:0',
+            'titulo'       => 'sometimes|string|max:255',
+            'descripcion'  => 'nullable|string',
+            'lugar'        => 'nullable|string|max:255',
+            'tiene_multa'  => 'boolean',
+            'multa_monto'  => 'nullable|numeric|min:0',
+            'fecha_inicio' => 'nullable|date',
+            'fecha_fin'    => 'nullable|date|after_or_equal:fecha_inicio',
+            'hora_inicio'  => 'nullable|date_format:H:i',
+            'hora_fin'     => 'nullable|date_format:H:i',
         ]);
 
         $montoAnterior = (float) $evento->multa_monto;
         $montoNuevo    = (float) $request->input('multa_monto', $montoAnterior);
         $cambiaMonto   = $request->has('multa_monto') && $montoNuevo !== $montoAnterior;
 
-        $evento->update($request->only('titulo', 'descripcion', 'lugar', 'tiene_multa', 'multa_monto'));
+        $evento->update($request->only(
+            'titulo', 'descripcion', 'lugar', 'tiene_multa', 'multa_monto',
+            'fecha_inicio', 'fecha_fin', 'hora_inicio', 'hora_fin'
+        ));
 
         $resumen = [];
 
