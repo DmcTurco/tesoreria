@@ -4,6 +4,8 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 class AdminController extends Controller
 {
@@ -73,6 +75,32 @@ class AdminController extends Controller
                 'success' => true,
                 'message' => "Corrección aplicada. {$corregidos} movimiento(s) corregido(s).",
                 'output'  => implode("\n", $log) ?: "No se encontraron movimientos para corregir.",
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    // GET /api/admin/backup
+    public function backup()
+    {
+        try {
+            $tableNames = Schema::getTableListing();
+            $backup     = [];
+
+            foreach ($tableNames as $name) {
+                $backup[$name] = DB::table($name)->get()->toArray();
+            }
+
+            $filename = 'backup_' . now()->format('Y-m-d_H-i-s') . '.json';
+            $content  = json_encode($backup, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+
+            return response($content, 200, [
+                'Content-Type'        => 'application/json',
+                'Content-Disposition' => 'attachment; filename="' . $filename . '"',
             ]);
         } catch (\Exception $e) {
             return response()->json([
