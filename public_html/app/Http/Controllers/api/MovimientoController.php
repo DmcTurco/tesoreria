@@ -92,6 +92,8 @@ class MovimientoController extends Controller
         $request->validate([
             'descripcion'   => 'sometimes|string|max:255',
             'categoria'     => 'sometimes|integer',
+            'fecha'         => 'sometimes|date',
+            'evento_id'     => 'nullable|exists:eventos,id',
             'comprobante'   => 'nullable|string|max:1000',
             'observaciones' => 'nullable|string',
         ]);
@@ -99,6 +101,8 @@ class MovimientoController extends Controller
         $movimiento->update($request->only(
             'descripcion',
             'categoria',
+            'fecha',
+            'evento_id',
             'comprobante',
             'observaciones'
         ));
