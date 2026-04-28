@@ -50,18 +50,22 @@ class AdminController extends Controller
                 }
             }
 
-            // Estrategia 2: por descripción (para abono_id truncado/incorrecto)
-            // Los movimientos de abono tienen descripción: "Abono cobro - Nombre" o "Abono multa - Nombre"
+            // Estrategia 2: por descripción (solo para movimientos huérfanos sin abono_id válido)
             $abonosAnulados = \App\Models\Abono::where('estado', 1)->with('padre')->get();
+            $abonosActivosIds = \App\Models\Abono::where('estado', 0)->pluck('id')->toArray();
 
             foreach ($abonosAnulados as $abono) {
                 if (!$abono->padre) continue;
 
-                // Buscar por nombre del padre + monto (sin restricción de fecha)
+                // Solo movimientos sin abono_id o con abono_id que NO apunta a un abono activo
                 $movs = \App\Models\Movimiento::where('categoria', 0)
                     ->where('tipo', 0)
                     ->where('descripcion', 'like', '%' . $abono->padre->nombre . '%')
                     ->where('monto', $abono->monto)
+                    ->where(function ($q) use ($abonosActivosIds) {
+                        $q->whereNull('abono_id')
+                          ->orWhereNotIn('abono_id', $abonosActivosIds);
+                    })
                     ->get();
 
                 foreach ($movs as $mov) {
@@ -75,6 +79,37 @@ class AdminController extends Controller
                 'success' => true,
                 'message' => "Corrección aplicada. {$corregidos} movimiento(s) corregido(s).",
                 'output'  => implode("\n", $log) ?: "No se encontraron movimientos para corregir.",
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    // POST /api/admin/restaurar-movimientos
+    public function restaurarMovimientos()
+    {
+        try {
+            $abonosActivosIds = \App\Models\Abono::where('estado', 0)->pluck('id')->toArray();
+
+            $movimientos = \App\Models\Movimiento::where('categoria', 1)
+                ->where('tipo', 0)
+                ->whereNotNull('abono_id')
+                ->whereIn('abono_id', $abonosActivosIds)
+                ->get();
+
+            $count = count($movimientos);
+            \App\Models\Movimiento::whereIn('id', $movimientos->pluck('id')->toArray())
+                ->update(['categoria' => 0]);
+
+            return response()->json([
+                'success' => true,
+                'message' => "{$count} movimiento(s) restaurado(s) correctamente.",
+                'output'  => $count > 0
+                    ? implode("\n", $movimientos->map(fn($m) => "Movimiento #{$m->id} (abono_id={$m->abono_id}, monto={$m->monto}) → restaurado")->toArray())
+                    : "No se encontraron movimientos incorrectos. El saldo ya está correcto.",
             ]);
         } catch (\Exception $e) {
             return response()->json([
