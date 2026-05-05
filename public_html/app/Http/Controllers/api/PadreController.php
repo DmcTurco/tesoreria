@@ -232,7 +232,10 @@ class PadreController extends Controller
 
         $cobros = $padre->eventoPadres()
             ->where('estado', 0)
-            ->whereHas('evento', fn($q) => $q->where('tipo', Evento::TIPO_CUOTA))
+            ->where(function ($q) {
+                $q->whereHas('evento', fn($q2) => $q2->where('tipo', Evento::TIPO_CUOTA))
+                  ->orWhereNotNull('monto_asignado');
+            })
             ->with('evento')
             ->get();
 
@@ -268,6 +271,7 @@ class PadreController extends Controller
             ->where('estado', 0)
             ->whereHas('evento', fn($q) => $q->where('tipo', 3))
             ->with('evento')
+            ->orderByDesc('created_at')
             ->get();
 
         return response()->json([

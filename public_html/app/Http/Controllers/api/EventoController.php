@@ -264,10 +264,11 @@ class EventoController extends Controller
         }
 
         EventoPadre::create([
-            'evento_id' => $evento->id,
-            'padre_id'  => $request->padre_id,
-            'fecha'     => $fecha,
-            'estado'    => EventoPadre::ESTADO_PENDIENTE,
+            'evento_id'      => $evento->id,
+            'padre_id'       => $request->padre_id,
+            'fecha'          => $fecha,
+            'estado'         => EventoPadre::ESTADO_PENDIENTE,
+            'monto_asignado' => $evento->multa_monto ?: null,
         ]);
 
         return response()->json(['message' => 'Padre asignado correctamente']);
@@ -481,7 +482,7 @@ class EventoController extends Controller
     {
         $padres = $evento->eventoPadres()
             ->with('padre')
-            ->orderBy('fecha')
+            ->orderByDesc('created_at')
             ->get();
 
         return response()->json($padres);
@@ -493,6 +494,7 @@ class EventoController extends Controller
         $pendientes = EventoPadre::where('evento_id', $evento->id)
             ->where('ajuste_resuelto', 0)
             ->with('padre:id,nombre,codigo')
+            ->orderByDesc('created_at')
             ->get()
             ->map(fn($ep) => [
                 'padre_id'       => $ep->padre_id,
@@ -578,7 +580,7 @@ class EventoController extends Controller
             ->get();
 
         $movimientos = Movimiento::where('evento_id', $evento->id)
-            ->orderBy('fecha')
+            ->orderByDesc('fecha')
             ->get();
 
         $resultado = $eventoPadres->map(function ($ep) use ($movimientos) {
@@ -622,7 +624,7 @@ class EventoController extends Controller
             ->where('categoria', '!=', Movimiento::CAT_CUOTA)
             ->whereNull('abono_id')
             ->with('registrador:id,name')
-            ->orderBy('fecha')
+            ->orderByDesc('fecha')
             ->get()
             ->map(fn($m) => [
                 'id'          => $m->id,
@@ -660,7 +662,7 @@ class EventoController extends Controller
             ->where('tipo', Movimiento::TIPO_EGRESO)
             ->where('categoria', '!=', Movimiento::CAT_CUOTA)
             ->whereNull('abono_id')
-            ->orderBy('fecha')
+            ->orderByDesc('fecha')
             ->get()
             ->map(fn($m) => [
                 'id'          => $m->id,
@@ -714,7 +716,8 @@ class EventoController extends Controller
                 'padre_id'  => (int) $padreId,
                 'fecha'     => null,
             ], [
-                'estado' => EventoPadre::ESTADO_PENDIENTE,
+                'estado'         => EventoPadre::ESTADO_PENDIENTE,
+                'monto_asignado' => $evento->multa_monto ?: null,
             ]);
         }
     }
