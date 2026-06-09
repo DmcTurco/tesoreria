@@ -15,10 +15,15 @@ class EventoPadre extends Model
     const ESTADO_JUSTIFICADO = 3;
     const ESTADO_EXONERADO   = 4;
 
+    // ── Flags de turno ────────────────────────────────────────────────────────
+    const TURNO_ENTRADA = 1;
+    const TURNO_SALIDA  = 2;
+
     protected $fillable = [
         'evento_id',
         'padre_id',
         'fecha',
+        'turno',
         'estado',
         'monto_pagado', // ← agregar esto
         'monto_asignado',   // ← nuevo
@@ -39,6 +44,7 @@ class EventoPadre extends Model
         'monto_pagado'    => 'decimal:2',  // ← agregar también
         'monto_asignado'  => 'decimal:2',  // ← nuevo
         'ajuste_resuelto' => 'integer',    // ← nuevo
+        'turno'           => 'integer',
     ];
 
     // ── Relaciones ────────────────────────────────────────────────────────────

@@ -60,6 +60,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
         // Admin / DB
         Route::get('/admin/backup',                      [AdminController::class, 'backup']);
+        Route::post('/admin/restore',                    [AdminController::class, 'restore']);
         Route::post('/admin/migrate',                    [AdminController::class, 'migrate']);
         Route::post('/admin/migrate-fresh',              [AdminController::class, 'migrateFresh']);
         Route::post('/admin/fix-movimientos-anulados',   [AdminController::class, 'fixMovimientosAnulados']);

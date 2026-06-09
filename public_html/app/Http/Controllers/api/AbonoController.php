@@ -33,9 +33,47 @@ class AbonoController extends Controller
             $query->whereDate('fecha', '<=', $request->fecha_fin);
         }
 
-        return response()->json(
-            $query->orderByDesc('fecha')->get()->map(fn($a) => $this->formatAbono($a))
+        $abonos = $query->orderByDesc('fecha')->get();
+
+        // Pre-cargar EventoPadre de cobros activos en una sola query
+        $cobroDeudaIds = $abonos
+            ->where('estado', Abono::ESTADO_ACTIVO)
+            ->where('tipo_deuda', 'cobro')
+            ->pluck('deuda_id')
+            ->unique();
+
+        $eventoPadres = EventoPadre::whereIn('id', $cobroDeudaIds)
+            ->get()
+            ->keyBy('id');
+
+        // Calcular total efectivo por padre
+        // - Cobros: deduplicar por deuda_id, usar ep->monto_pagado (balance real tras devoluciones)
+        // - Multas: sumar monto de cada abono directamente
+        $acum = [];
+        foreach ($abonos->where('estado', Abono::ESTADO_ACTIVO) as $abono) {
+            $pid = $abono->padre_id;
+            if (!isset($acum[$pid])) {
+                $acum[$pid] = ['cobros' => [], 'multas' => 0.0];
+            }
+            if ($abono->tipo_deuda === 'cobro') {
+                $did = $abono->deuda_id;
+                if (!array_key_exists($did, $acum[$pid]['cobros'])) {
+                    $ep = $eventoPadres->get($did);
+                    $acum[$pid]['cobros'][$did] = (float) ($ep?->monto_pagado ?? $abono->monto);
+                }
+            } else {
+                $acum[$pid]['multas'] += (float) $abono->monto;
+            }
+        }
+
+        $totales = collect($acum)->map(
+            fn($d) => round($d['multas'] + array_sum($d['cobros']), 2)
         );
+
+        return response()->json([
+            'abonos'            => $abonos->map(fn($a) => $this->formatAbono($a)),
+            'totales_por_padre' => $totales,
+        ]);
     }
 
     // POST /api/abonos

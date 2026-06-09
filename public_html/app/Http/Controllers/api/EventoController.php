@@ -61,6 +61,7 @@ class EventoController extends Controller
             'padres_por_dia' => 'nullable|integer|min:1',
             'lugar'          => 'nullable|string|max:255',
             'tiene_multa'    => 'boolean',
+            'tiene_turnos'   => 'integer|in:0,1',
             'multa_monto'    => 'nullable|numeric|min:0',
             'padres_ids'     => 'nullable|array',
             'padres_ids.*'   => 'integer|exists:padres,id',
@@ -79,6 +80,7 @@ class EventoController extends Controller
                 'padres_por_dia' => $request->padres_por_dia,
                 'lugar'          => $request->lugar,
                 'tiene_multa'    => $request->boolean('tiene_multa', false),
+                'tiene_turnos'   => $request->input('tiene_turnos', 0),
                 'multa_monto'    => $request->multa_monto ?? 10.00,
                 'estado'         => Evento::ESTADO_ACTIVO,
                 'creado_por'     => $request->user()->id,
@@ -117,27 +119,73 @@ class EventoController extends Controller
     public function update(Request $request, Evento $evento)
     {
         $request->validate([
-            'titulo'       => 'sometimes|string|max:255',
-            'descripcion'  => 'nullable|string',
-            'lugar'        => 'nullable|string|max:255',
-            'tiene_multa'  => 'boolean',
-            'multa_monto'  => 'nullable|numeric|min:0',
-            'fecha_inicio' => 'nullable|date',
-            'fecha_fin'    => 'nullable|date|after_or_equal:fecha_inicio',
-            'hora_inicio'  => 'nullable|date_format:H:i',
-            'hora_fin'     => 'nullable|date_format:H:i',
+            'titulo'        => 'sometimes|string|max:255',
+            'descripcion'   => 'nullable|string',
+            'lugar'         => 'nullable|string|max:255',
+            'tiene_multa'   => 'boolean',
+            'tiene_turnos'  => 'integer|in:0,1',
+            'multa_monto'   => 'nullable|numeric|min:0',
+            'fecha_inicio'  => 'nullable|date',
+            'fecha_fin'     => 'nullable|date|after_or_equal:fecha_inicio',
+            'hora_inicio'   => 'nullable|date_format:H:i',
+            'hora_fin'      => 'nullable|date_format:H:i',
         ]);
 
-        $montoAnterior = (float) $evento->multa_monto;
-        $montoNuevo    = (float) $request->input('multa_monto', $montoAnterior);
-        $cambiaMonto   = $request->has('multa_monto') && $montoNuevo !== $montoAnterior;
+        $montoAnterior   = (float) $evento->multa_monto;
+        $montoNuevo      = (float) $request->input('multa_monto', $montoAnterior);
+        $cambiaMonto     = $request->has('multa_monto') && $montoNuevo !== $montoAnterior;
+        $activaMulta     = $request->has('tiene_multa')
+                           && !$evento->tiene_multa
+                           && $request->boolean('tiene_multa');
+        $activaTurnos    = $request->has('tiene_turnos')
+                           && $evento->tiene_turnos == 0
+                           && (int) $request->input('tiene_turnos') === 1;
 
         $evento->update($request->only(
-            'titulo', 'descripcion', 'lugar', 'tiene_multa', 'multa_monto',
+            'titulo', 'descripcion', 'lugar', 'tiene_multa', 'tiene_turnos', 'multa_monto',
             'fecha_inicio', 'fecha_fin', 'hora_inicio', 'hora_fin'
         ));
 
         $resumen = [];
+
+        // Se activó "tiene_multa" en un evento que no era cobro (ya tenían monto_asignado = null)
+        // → asignar multa_monto a todos los padres pendientes
+        if ($activaMulta && !$cambiaMonto) {
+            EventoPadre::where('evento_id', $evento->id)
+                ->where('estado', EventoPadre::ESTADO_PENDIENTE)
+                ->whereNull('monto_asignado')
+                ->update(['monto_asignado' => $evento->multa_monto]);
+        }
+
+        // Se activaron turnos en un evento que ya tenía filas sin turno
+        // → dividir cada fila en 2 (entrada + salida), monto / 2 cada una
+        if ($activaTurnos) {
+            $filasExistentes = EventoPadre::where('evento_id', $evento->id)
+                ->whereNull('turno')
+                ->get();
+
+            foreach ($filasExistentes as $fila) {
+                $montoBase     = (float) ($fila->monto_asignado ?? $evento->multa_monto);
+                $montoPorTurno = $montoBase > 0 ? round($montoBase / 2, 2) : null;
+
+                if ($fila->estado === EventoPadre::ESTADO_PRESENTE) {
+                    // Ya asistió: marcar como turno entrada (asumimos que cumplió)
+                    $fila->update(['turno' => EventoPadre::TURNO_ENTRADA]);
+                    // Crear turno salida también como presente
+                    EventoPadre::firstOrCreate(
+                        ['evento_id' => $evento->id, 'padre_id' => $fila->padre_id, 'fecha' => $fila->fecha?->toDateString(), 'turno' => EventoPadre::TURNO_SALIDA],
+                        ['estado' => EventoPadre::ESTADO_PRESENTE, 'monto_asignado' => $montoPorTurno, 'monto_pagado' => 0]
+                    );
+                } else {
+                    // Pendiente, ausente u otro: dividir en 2 turnos
+                    $fila->update(['turno' => EventoPadre::TURNO_ENTRADA, 'monto_asignado' => $montoPorTurno]);
+                    EventoPadre::firstOrCreate(
+                        ['evento_id' => $evento->id, 'padre_id' => $fila->padre_id, 'fecha' => $fila->fecha?->toDateString(), 'turno' => EventoPadre::TURNO_SALIDA],
+                        ['estado' => $fila->estado, 'monto_asignado' => $montoPorTurno, 'monto_pagado' => 0]
+                    );
+                }
+            }
+        }
 
         if ($cambiaMonto) {
 
@@ -200,12 +248,18 @@ class EventoController extends Controller
                     ->where('estado', EventoPadre::ESTADO_AUSENTE)
                     ->get();
 
-                foreach ($faltosos as $ep) {
+                // Agrupar por padre y sumar montos (necesario para eventos con 2 turnos:
+                // si faltó a ambos → multa completa; si solo faltó a uno → mitad)
+                $montosPorPadre = $faltosos->groupBy('padre_id')->map(
+                    fn($eps) => $eps->sum(fn($ep) => (float) ($ep->monto_asignado ?? $evento->multa_monto))
+                );
+
+                foreach ($montosPorPadre as $padreId => $monto) {
                     Multa::firstOrCreate([
-                        'padre_id'  => $ep->padre_id,
+                        'padre_id'  => $padreId,
                         'evento_id' => $evento->id,
                     ], [
-                        'monto'          => $ep->monto_asignado ?? $evento->multa_monto,
+                        'monto'          => $monto,
                         'concepto'       => "Inasistencia: {$evento->titulo}",
                         'estado'         => Multa::ESTADO_PENDIENTE,
                         'fecha_generada' => now()->toDateString(),
@@ -253,23 +307,19 @@ class EventoController extends Controller
             }
         }
 
-        // Evitar duplicado
-        $existe = EventoPadre::where('evento_id', $evento->id)
+        // Evitar duplicado (para turnos: verificar que no existan ya ambos turnos)
+        $existentes = EventoPadre::where('evento_id', $evento->id)
             ->where('padre_id', $request->padre_id)
             ->where('fecha', $fecha)
-            ->exists();
+            ->count();
 
-        if ($existe) {
+        $esperados = $evento->tiene_turnos ? 2 : 1;
+
+        if ($existentes >= $esperados) {
             return response()->json(['message' => 'El padre ya está asignado en esta fecha'], 422);
         }
 
-        EventoPadre::create([
-            'evento_id'      => $evento->id,
-            'padre_id'       => $request->padre_id,
-            'fecha'          => $fecha,
-            'estado'         => EventoPadre::ESTADO_PENDIENTE,
-            'monto_asignado' => $evento->multa_monto ?: null,
-        ]);
+        $this->crearFilasPadre($evento, $request->padre_id, $fecha);
 
         return response()->json(['message' => 'Padre asignado correctamente']);
     }
@@ -402,8 +452,9 @@ class EventoController extends Controller
         $request->validate([
             'padre_id'     => 'required|integer|exists:padres,id',
             'fecha'        => 'nullable|date',
-            'es_reemplazo' => 'boolean',       // ← agregado
-            'anotacion'    => 'nullable|string|max:255', // ← agregado
+            'turno'        => 'nullable|integer|in:1,2',
+            'es_reemplazo' => 'boolean',
+            'anotacion'    => 'nullable|string|max:255',
         ]);
 
         $fecha = $request->input('fecha', now()->toDateString());
@@ -413,6 +464,11 @@ class EventoController extends Controller
 
         if ($evento->esGuardia()) {
             $query->where('fecha', $fecha);
+        }
+
+        // Con turnos, distinguir cuál de los dos registros marcar
+        if ($evento->tiene_turnos && $request->filled('turno')) {
+            $query->where('turno', $request->turno);
         }
 
         $ep = $query->first();
@@ -583,7 +639,7 @@ class EventoController extends Controller
             ->orderByDesc('fecha')
             ->get();
 
-        $resultado = $eventoPadres->map(function ($ep) use ($movimientos) {
+        $resultado = $eventoPadres->map(function ($ep) use ($movimientos, $evento) {
             $movsPadre = $movimientos->filter(function ($m) use ($ep) {
                 if ($m->abono_id) {
                     return Abono::where('id', $m->abono_id)
@@ -599,11 +655,11 @@ class EventoController extends Controller
                 'codigo'          => $ep->padre->codigo,
                 'hijo'            => $ep->padre->hijo,
                 'grado'           => $ep->padre->grado,
-                'monto_asignado'  => (float) $ep->monto_asignado,
+                'monto_asignado'  => (float) ($ep->monto_asignado ?: ($evento->esCuota() ? $evento->multa_monto : 0)),
                 'monto_pagado'    => (float) $ep->monto_pagado,
                 'estado'          => $ep->estado,
                 'ajuste_resuelto' => $ep->ajuste_resuelto,
-                'diferencia'      => (float) $ep->monto_asignado - (float) $ep->monto_pagado,
+                'diferencia'      => (float) ($ep->monto_asignado ?: ($evento->esCuota() ? $evento->multa_monto : 0)) - (float) $ep->monto_pagado,
                 'movimientos' => $movsPadre->values()->map(fn($m) => [
                     'tipo'        => $m->tipo,
                     'monto'       => (float) $m->monto,
@@ -711,14 +767,7 @@ class EventoController extends Controller
     private function asignarPadresManual(Evento $evento, array $padresIds): void
     {
         foreach ($padresIds as $padreId) {
-            EventoPadre::firstOrCreate([
-                'evento_id' => $evento->id,
-                'padre_id'  => (int) $padreId,
-                'fecha'     => null,
-            ], [
-                'estado'         => EventoPadre::ESTADO_PENDIENTE,
-                'monto_asignado' => $evento->multa_monto ?: null,
-            ]);
+            $this->crearFilasPadre($evento, (int) $padreId, null);
         }
     }
 
@@ -727,17 +776,35 @@ class EventoController extends Controller
      */
     private function asignarTodosLosPadres(Evento $evento): void
     {
-        $padres = Padre::all();
+        foreach (Padre::all() as $padre) {
+            $this->crearFilasPadre($evento, $padre->id, null);
+        }
+    }
 
-        foreach ($padres as $padre) {
+    /**
+     * Crea 1 o 2 filas en evento_padres según tiene_turnos.
+     * Con turnos: 2 filas (entrada + salida), monto = multa_monto / 2 cada una.
+     * Sin turnos: 1 fila con monto completo.
+     */
+    private function crearFilasPadre(Evento $evento, int $padreId, ?string $fecha): void
+    {
+        $montoBase = $evento->esCuota()
+            ? (float) $evento->multa_monto
+            : ($evento->tiene_multa ? (float) $evento->multa_monto : null);
+
+        if ($evento->tiene_turnos) {
+            $montoPorTurno = $montoBase !== null ? round($montoBase / 2, 2) : null;
+
+            foreach ([EventoPadre::TURNO_ENTRADA, EventoPadre::TURNO_SALIDA] as $turno) {
+                EventoPadre::firstOrCreate(
+                    ['evento_id' => $evento->id, 'padre_id' => $padreId, 'fecha' => $fecha, 'turno' => $turno],
+                    ['estado' => EventoPadre::ESTADO_PENDIENTE, 'monto_asignado' => $montoPorTurno]
+                );
+            }
+        } else {
             EventoPadre::firstOrCreate(
-                ['evento_id' => $evento->id, 'padre_id' => $padre->id, 'fecha' => null],
-                [
-                    'estado'         => EventoPadre::ESTADO_PENDIENTE,
-                    'monto_asignado' => $evento->esCuota()
-                        ? $evento->multa_monto                                    // cuota → siempre tiene monto
-                        : ($evento->tiene_multa ? $evento->multa_monto : null),   // otros → solo si tiene multa
-                ]
+                ['evento_id' => $evento->id, 'padre_id' => $padreId, 'fecha' => $fecha, 'turno' => null],
+                ['estado' => EventoPadre::ESTADO_PENDIENTE, 'monto_asignado' => $montoBase]
             );
         }
     }

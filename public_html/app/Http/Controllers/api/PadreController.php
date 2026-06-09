@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Evento;
+use App\Models\EventoPadre;
 use App\Models\Multa;
 use App\Models\Padre;
 use App\Models\User;
@@ -61,6 +62,17 @@ class PadreController extends Controller
                 'role'      => User::ROLE_PADRE,
                 'padre_id'  => $padre->id,
             ]);
+
+            // Auto-asignar a eventos de cuota activos
+            Evento::where('tipo', Evento::TIPO_CUOTA)
+                ->where('estado', Evento::ESTADO_ACTIVO)
+                ->get()
+                ->each(function ($evento) use ($padre) {
+                    EventoPadre::firstOrCreate(
+                        ['evento_id' => $evento->id, 'padre_id' => $padre->id, 'fecha' => null],
+                        ['estado' => EventoPadre::ESTADO_PENDIENTE, 'monto_asignado' => $evento->multa_monto]
+                    );
+                });
 
             return response()->json([
                 'message' => 'Padre registrado correctamente',

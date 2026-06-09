@@ -145,6 +145,86 @@ class AdminController extends Controller
         }
     }
 
+    // POST /api/admin/restore
+    public function restore(\Illuminate\Http\Request $request)
+    {
+        if (!$request->hasFile('backup')) {
+            return response()->json(['success' => false, 'message' => 'No se recibió ningún archivo.'], 422);
+        }
+
+        $content = file_get_contents($request->file('backup')->getRealPath());
+        $data    = json_decode($content, true);
+
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            return response()->json(['success' => false, 'message' => 'El archivo no es un JSON válido.'], 422);
+        }
+
+        if (empty($data) || !is_array($data)) {
+            return response()->json(['success' => false, 'message' => 'El JSON está vacío o tiene formato incorrecto.'], 422);
+        }
+
+        $skip   = ['migrations', 'cache', 'cache_locks', 'jobs', 'job_batches', 'failed_jobs', 'sessions', 'personal_access_tokens'];
+        $driver = DB::getDriverName();
+
+        // Normalizar nombres: quitar prefijo de schema si viene del servidor (ej: "bsqbfiel_school.abonos" → "abonos")
+        $normalized = [];
+        foreach ($data as $key => $rows) {
+            $table = str_contains($key, '.') ? substr($key, strrpos($key, '.') + 1) : $key;
+            $normalized[$table] = $rows;
+        }
+        $data = $normalized;
+
+        $tablesRestored = 0;
+        $rowsInserted   = 0;
+        $errors         = [];
+
+        try {
+            // 1. Truncar todas las tablas primero
+            foreach ($data as $table => $rows) {
+                if (in_array($table, $skip) || !Schema::hasTable($table)) continue;
+                try {
+                    if ($driver === 'pgsql') {
+                        DB::statement("TRUNCATE TABLE \"{$table}\" RESTART IDENTITY CASCADE");
+                    } elseif ($driver === 'mysql') {
+                        DB::statement('SET FOREIGN_KEY_CHECKS=0');
+                        DB::table($table)->truncate();
+                        DB::statement('SET FOREIGN_KEY_CHECKS=1');
+                    } else {
+                        DB::table($table)->truncate();
+                    }
+                } catch (\Exception $e) {
+                    $errors[] = "Truncate {$table}: " . $e->getMessage();
+                }
+            }
+
+            // 2. Insertar datos
+            foreach ($data as $table => $rows) {
+                if (in_array($table, $skip) || !Schema::hasTable($table)) continue;
+                if (empty($rows)) { $tablesRestored++; continue; }
+
+                try {
+                    foreach (array_chunk($rows, 200) as $chunk) {
+                        DB::table($table)->insert(array_map(fn($r) => (array) $r, $chunk));
+                    }
+                    $rowsInserted += count($rows);
+                    $tablesRestored++;
+                } catch (\Exception $e) {
+                    $errors[] = "Insert {$table}: " . $e->getMessage();
+                }
+            }
+
+            return response()->json([
+                'success' => empty($errors),
+                'message' => empty($errors)
+                    ? "Restore completado: {$tablesRestored} tabla(s), {$rowsInserted} fila(s) restauradas."
+                    : "Restore parcial: {$tablesRestored} tabla(s), {$rowsInserted} fila(s). Errores: " . implode(' | ', $errors),
+                'output'  => empty($errors) ? null : implode("\n", $errors),
+            ]);
+        } catch (\Exception $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
     // POST /api/admin/migrate-fresh
     public function migrateFresh()
     {

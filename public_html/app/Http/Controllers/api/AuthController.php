@@ -27,6 +27,9 @@ class AuthController extends Controller
             ], 401);
         }
 
+        // Eliminar tokens anteriores para no acumular sesiones huérfanas
+        $user->tokens()->delete();
+
         $token = $user->createToken('apafa-token')->plainTextToken;
 
         return response()->json([
