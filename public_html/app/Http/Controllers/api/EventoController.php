@@ -157,34 +157,15 @@ class EventoController extends Controller
                 ->update(['monto_asignado' => $evento->multa_monto]);
         }
 
-        // Se activaron turnos en un evento que ya tenía filas sin turno
-        // → dividir cada fila en 2 (entrada + salida), monto / 2 cada una
+        // Se activaron los turnos → inicializar turnos_estado en filas existentes
         if ($activaTurnos) {
-            $filasExistentes = EventoPadre::where('evento_id', $evento->id)
-                ->whereNull('turno')
-                ->get();
-
-            foreach ($filasExistentes as $fila) {
-                $montoBase     = (float) ($fila->monto_asignado ?? $evento->multa_monto);
-                $montoPorTurno = $montoBase > 0 ? round($montoBase / 2, 2) : null;
-
-                if ($fila->estado === EventoPadre::ESTADO_PRESENTE) {
-                    // Ya asistió: marcar como turno entrada (asumimos que cumplió)
-                    $fila->update(['turno' => EventoPadre::TURNO_ENTRADA]);
-                    // Crear turno salida también como presente
-                    EventoPadre::firstOrCreate(
-                        ['evento_id' => $evento->id, 'padre_id' => $fila->padre_id, 'fecha' => $fila->fecha?->toDateString(), 'turno' => EventoPadre::TURNO_SALIDA],
-                        ['estado' => EventoPadre::ESTADO_PRESENTE, 'monto_asignado' => $montoPorTurno, 'monto_pagado' => 0]
-                    );
-                } else {
-                    // Pendiente, ausente u otro: dividir en 2 turnos
-                    $fila->update(['turno' => EventoPadre::TURNO_ENTRADA, 'monto_asignado' => $montoPorTurno]);
-                    EventoPadre::firstOrCreate(
-                        ['evento_id' => $evento->id, 'padre_id' => $fila->padre_id, 'fecha' => $fila->fecha?->toDateString(), 'turno' => EventoPadre::TURNO_SALIDA],
-                        ['estado' => $fila->estado, 'monto_asignado' => $montoPorTurno, 'monto_pagado' => 0]
-                    );
-                }
-            }
+            EventoPadre::where('evento_id', $evento->id)
+                ->whereNull('turnos_estado')
+                ->get()
+                ->each(function ($ep) {
+                    $estadoEntrada = $ep->estado === EventoPadre::ESTADO_PRESENTE ? 1 : 0;
+                    $ep->update(['turnos_estado' => [$estadoEntrada, 0]]);
+                });
         }
 
         if ($cambiaMonto) {
@@ -237,30 +218,71 @@ class EventoController extends Controller
     public function cerrar(Evento $evento)
     {
         DB::transaction(function () use ($evento) {
-            // Pendientes → ausentes
+            // Pendientes sin ningún turno marcado → ausentes
             EventoPadre::where('evento_id', $evento->id)
                 ->where('estado', EventoPadre::ESTADO_PENDIENTE)
                 ->update(['estado' => EventoPadre::ESTADO_AUSENTE]);
 
             // Generar multas si aplica
             if ($evento->tiene_multa) {
-                $faltosos = EventoPadre::where('evento_id', $evento->id)
+                $montosPorPadre = [];
+
+                // ── Filas sin turnos (eventos normales) ───────────────────────
+                $faltososSinTurnos = EventoPadre::where('evento_id', $evento->id)
                     ->where('estado', EventoPadre::ESTADO_AUSENTE)
+                    ->whereNull('turnos_estado')
                     ->get();
 
-                // Agrupar por padre y sumar montos (necesario para eventos con 2 turnos:
-                // si faltó a ambos → multa completa; si solo faltó a uno → mitad)
-                $montosPorPadre = $faltosos->groupBy('padre_id')->map(
-                    fn($eps) => $eps->sum(fn($ep) => (float) ($ep->monto_asignado ?? $evento->multa_monto))
-                );
+                foreach ($faltososSinTurnos as $ep) {
+                    $monto = (float) ($ep->monto_asignado ?? $evento->multa_monto);
+                    $montosPorPadre[$ep->padre_id] = [
+                        'monto'   => ($montosPorPadre[$ep->padre_id]['monto'] ?? 0) + $monto,
+                        'concepto' => "Inasistencia: {$evento->titulo}",
+                    ];
+                }
 
-                foreach ($montosPorPadre as $padreId => $monto) {
+                // ── Filas con turnos (bapers) ─────────────────────────────────
+                $filasConTurnos = EventoPadre::where('evento_id', $evento->id)
+                    ->whereNotNull('turnos_estado')
+                    ->whereNotIn('estado', [
+                        EventoPadre::ESTADO_EXONERADO,
+                        EventoPadre::ESTADO_JUSTIFICADO,
+                    ])
+                    ->get();
+
+                foreach ($filasConTurnos as $ep) {
+                    $estados     = $ep->turnos_estado ?? [0, 0];
+                    $ausentes    = count(array_filter($estados, fn($e) => $e !== 1));
+
+                    if ($ausentes === 0) continue; // asistió a todos los turnos
+
+                    $montoTotal  = (float) ($ep->monto_asignado ?? $evento->multa_monto);
+                    $monto       = round($montoTotal / count($estados) * $ausentes, 2);
+
+                    $faltóEntrada = $estados[0] !== 1;
+                    $faltóSalida  = $estados[1] !== 1;
+
+                    if ($faltóEntrada && $faltóSalida) {
+                        $turnosTexto = 'entrada y salida';
+                    } elseif ($faltóEntrada) {
+                        $turnosTexto = 'entrada';
+                    } else {
+                        $turnosTexto = 'salida';
+                    }
+
+                    $montosPorPadre[$ep->padre_id] = [
+                        'monto'   => ($montosPorPadre[$ep->padre_id]['monto'] ?? 0) + $monto,
+                        'concepto' => "Inasistencia ({$turnosTexto}): {$evento->titulo}",
+                    ];
+                }
+
+                foreach ($montosPorPadre as $padreId => $data) {
                     Multa::firstOrCreate([
                         'padre_id'  => $padreId,
                         'evento_id' => $evento->id,
                     ], [
-                        'monto'          => $monto,
-                        'concepto'       => "Inasistencia: {$evento->titulo}",
+                        'monto'          => $data['monto'],
+                        'concepto'       => $data['concepto'],
                         'estado'         => Multa::ESTADO_PENDIENTE,
                         'fecha_generada' => now()->toDateString(),
                     ]);
@@ -307,15 +329,13 @@ class EventoController extends Controller
             }
         }
 
-        // Evitar duplicado (para turnos: verificar que no existan ya ambos turnos)
-        $existentes = EventoPadre::where('evento_id', $evento->id)
+        // Evitar duplicado (una sola fila por padre/fecha)
+        $existe = EventoPadre::where('evento_id', $evento->id)
             ->where('padre_id', $request->padre_id)
             ->where('fecha', $fecha)
-            ->count();
+            ->exists();
 
-        $esperados = $evento->tiene_turnos ? 2 : 1;
-
-        if ($existentes >= $esperados) {
+        if ($existe) {
             return response()->json(['message' => 'El padre ya está asignado en esta fecha'], 422);
         }
 
@@ -452,7 +472,7 @@ class EventoController extends Controller
         $request->validate([
             'padre_id'     => 'required|integer|exists:padres,id',
             'fecha'        => 'nullable|date',
-            'turno'        => 'nullable|integer|in:1,2',
+            'turno'        => 'nullable|integer|in:1,2',  // 1=entrada, 2=salida
             'es_reemplazo' => 'boolean',
             'anotacion'    => 'nullable|string|max:255',
         ]);
@@ -466,11 +486,6 @@ class EventoController extends Controller
             $query->where('fecha', $fecha);
         }
 
-        // Con turnos, distinguir cuál de los dos registros marcar
-        if ($evento->tiene_turnos && $request->filled('turno')) {
-            $query->where('turno', $request->turno);
-        }
-
         $ep = $query->first();
 
         if (!$ep) {
@@ -479,19 +494,47 @@ class EventoController extends Controller
             ], 404);
         }
 
-        if ($ep->estado === EventoPadre::ESTADO_PRESENTE) {
-            return response()->json(['message' => 'Asistencia ya registrada'], 422);
-        }
-
         if (in_array($ep->estado, [EventoPadre::ESTADO_EXONERADO, EventoPadre::ESTADO_JUSTIFICADO])) {
             return response()->json(['message' => 'El padre está exonerado o justificado'], 422);
+        }
+
+        // ── Evento con turnos → actualizar turnos_estado ──────────────────────
+        if ($evento->tiene_turnos && $request->filled('turno')) {
+            $idx    = (int) $request->turno === 1 ? 0 : 1; // turno 1=entrada→idx 0, 2=salida→idx 1
+            $estados = $ep->turnos_estado ?? [0, 0];
+
+            if ($estados[$idx] === 1) {
+                return response()->json(['message' => 'Este turno ya fue marcado'], 422);
+            }
+
+            $estados[$idx] = 1;
+
+            $ep->update([
+                'turnos_estado' => $estados,
+                'estado'        => EventoPadre::ESTADO_PRESENTE, // al menos 1 turno → presente
+                'hora_marcado'  => now(),
+                'es_reemplazo'  => $request->boolean('es_reemplazo', false),
+                'anotacion'     => $request->anotacion,
+            ]);
+
+            return response()->json([
+                'message'       => 'Turno registrado correctamente',
+                'padre'         => $ep->padre->nombre,
+                'hora'          => $ep->hora_marcado,
+                'turnos_estado' => $estados,
+            ]);
+        }
+
+        // ── Sin turnos → comportamiento original ──────────────────────────────
+        if ($ep->estado === EventoPadre::ESTADO_PRESENTE) {
+            return response()->json(['message' => 'Asistencia ya registrada'], 422);
         }
 
         $ep->update([
             'estado'       => EventoPadre::ESTADO_PRESENTE,
             'hora_marcado' => now(),
-            'es_reemplazo' => $request->boolean('es_reemplazo', false), // ← agregado
-            'anotacion'    => $request->anotacion,                       // ← agregado
+            'es_reemplazo' => $request->boolean('es_reemplazo', false),
+            'anotacion'    => $request->anotacion,
         ]);
 
         return response()->json([
@@ -782,9 +825,9 @@ class EventoController extends Controller
     }
 
     /**
-     * Crea 1 o 2 filas en evento_padres según tiene_turnos.
-     * Con turnos: 2 filas (entrada + salida), monto = multa_monto / 2 cada una.
-     * Sin turnos: 1 fila con monto completo.
+     * Crea 1 fila en evento_padres.
+     * Con turnos: turnos_estado = [0, 0] y monto completo.
+     * Sin turnos: turnos_estado = null.
      */
     private function crearFilasPadre(Evento $evento, int $padreId, ?string $fecha): void
     {
@@ -792,20 +835,11 @@ class EventoController extends Controller
             ? (float) $evento->multa_monto
             : ($evento->tiene_multa ? (float) $evento->multa_monto : null);
 
-        if ($evento->tiene_turnos) {
-            $montoPorTurno = $montoBase !== null ? round($montoBase / 2, 2) : null;
+        $turnosEstado = $evento->tiene_turnos ? [0, 0] : null;
 
-            foreach ([EventoPadre::TURNO_ENTRADA, EventoPadre::TURNO_SALIDA] as $turno) {
-                EventoPadre::firstOrCreate(
-                    ['evento_id' => $evento->id, 'padre_id' => $padreId, 'fecha' => $fecha, 'turno' => $turno],
-                    ['estado' => EventoPadre::ESTADO_PENDIENTE, 'monto_asignado' => $montoPorTurno]
-                );
-            }
-        } else {
-            EventoPadre::firstOrCreate(
-                ['evento_id' => $evento->id, 'padre_id' => $padreId, 'fecha' => $fecha, 'turno' => null],
-                ['estado' => EventoPadre::ESTADO_PENDIENTE, 'monto_asignado' => $montoBase]
-            );
-        }
+        EventoPadre::firstOrCreate(
+            ['evento_id' => $evento->id, 'padre_id' => $padreId, 'fecha' => $fecha],
+            ['estado' => EventoPadre::ESTADO_PENDIENTE, 'monto_asignado' => $montoBase, 'turnos_estado' => $turnosEstado]
+        );
     }
 }

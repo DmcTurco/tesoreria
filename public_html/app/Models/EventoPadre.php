@@ -15,19 +15,15 @@ class EventoPadre extends Model
     const ESTADO_JUSTIFICADO = 3;
     const ESTADO_EXONERADO   = 4;
 
-    // ── Flags de turno ────────────────────────────────────────────────────────
-    const TURNO_ENTRADA = 1;
-    const TURNO_SALIDA  = 2;
-
     protected $fillable = [
         'evento_id',
         'padre_id',
         'fecha',
-        'turno',
+        'turnos_estado',
         'estado',
-        'monto_pagado', // ← agregar esto
-        'monto_asignado',   // ← nuevo
-        'ajuste_resuelto',  // ← nuevo
+        'monto_pagado',
+        'monto_asignado',
+        'ajuste_resuelto',
         'hora_marcado',
         'multa_generada',
         'motivo_exoneracion',
@@ -41,10 +37,10 @@ class EventoPadre extends Model
         'hora_marcado'   => 'datetime',
         'multa_generada' => 'boolean',
         'estado'         => 'integer',
-        'monto_pagado'    => 'decimal:2',  // ← agregar también
-        'monto_asignado'  => 'decimal:2',  // ← nuevo
-        'ajuste_resuelto' => 'integer',    // ← nuevo
-        'turno'           => 'integer',
+        'monto_pagado'    => 'decimal:2',
+        'monto_asignado'  => 'decimal:2',
+        'ajuste_resuelto' => 'integer',
+        'turnos_estado'   => 'array',   // [entrada, salida]  →  0=pendiente, 1=presente
     ];
 
     // ── Relaciones ────────────────────────────────────────────────────────────
