@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Services\CobroService;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -219,6 +220,63 @@ class AdminController extends Controller
                     ? "Restore completado: {$tablesRestored} tabla(s), {$rowsInserted} fila(s) restauradas."
                     : "Restore parcial: {$tablesRestored} tabla(s), {$rowsInserted} fila(s). Errores: " . implode(' | ', $errors),
                 'output'  => empty($errors) ? null : implode("\n", $errors),
+            ]);
+        } catch (\Exception $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    // POST /api/admin/fix-cobros-estado
+    public function fixCobrosEstado()
+    {
+        try {
+            $corregidos = \App\Models\EventoPadre::where('estado', 0)
+                ->whereNotNull('monto_asignado')
+                ->where('monto_asignado', '>', 0)
+                ->whereColumn('monto_pagado', '>=', 'monto_asignado')
+                ->get();
+
+            $ids = $corregidos->pluck('id');
+            \App\Models\EventoPadre::whereIn('id', $ids)->update(['estado' => 1]);
+
+            return response()->json([
+                'success' => true,
+                'message' => "{$ids->count()} cobro(s) corregido(s).",
+                'output'  => $corregidos->map(fn($ep) => "EP #{$ep->id} → estado=1")->implode("\n") ?: "Nada que corregir.",
+            ]);
+        } catch (\Exception $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    // POST /api/admin/fix-monto-pagado-cobros
+    public function fixMontoPagadoCobros()
+    {
+        try {
+            $corregidos = [];
+
+            $servicio = new CobroService();
+
+            \App\Models\EventoPadre::where('monto_pagado', '>', 0)->each(function ($ep) use (&$corregidos, $servicio) {
+                $totalAbonos = (float) \App\Models\Abono::where('tipo_deuda', 'cobro')
+                    ->where('deuda_id', $ep->id)
+                    ->where('estado', 0)
+                    ->sum('monto');
+                $montoPagado = (float) $ep->monto_pagado;
+
+                // Solo corregir cuando monto_pagado > abonos activos
+                // (abono anulado que no redujo monto_pagado → CobroService lo sincroniza)
+                // NO tocar cuando abonos > monto_pagado: es devolución procesada correctamente
+                if ($montoPagado <= $totalAbonos) return;
+
+                $servicio->sincronizar($ep->fresh());
+                $corregidos[] = "EP #{$ep->id}: {$montoPagado} → {$totalAbonos}";
+            });
+
+            return response()->json([
+                'success' => true,
+                'message' => count($corregidos) . ' fila(s) corregida(s).',
+                'output'  => implode("\n", $corregidos) ?: 'Nada que corregir.',
             ]);
         } catch (\Exception $e) {
             return response()->json(['success' => false, 'message' => $e->getMessage()], 500);

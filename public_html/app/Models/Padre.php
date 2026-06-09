@@ -54,17 +54,15 @@ class Padre extends Model
             ->get()
             ->sum(fn($m) => max(0, (float) $m->monto - (float) ($m->monto_pagado ?? 0)));
 
-        // Cobros de eventos pendientes o parciales → saldo real
-        // Incluye: Cuota (tipo 3) + cualquier evento con monto_asignado (ej. Actividad usada como cobro)
+        // Cobros de eventos de cuota pendientes → saldo real
+        // Solo tipo CUOTA (3): los demás tipos (bapers, faenas, etc.) generan deuda
+        // vía Multa al cerrarse, no como cobro directo. Contarlos aquí duplicaría la deuda.
         $cobros = $this->eventoPadres()
-            ->whereIn('estado', [EventoPadre::ESTADO_PENDIENTE, 1])
-            ->where(function ($q) {
-                $q->whereHas('evento', fn($q2) => $q2->where('tipo', Evento::TIPO_CUOTA))
-                  ->orWhereNotNull('monto_asignado');
-            })
-            ->with('evento')
+            ->where('estado', EventoPadre::ESTADO_PENDIENTE)
+            ->whereHas('evento', fn($q) => $q->where('tipo', Evento::TIPO_CUOTA))
+            ->whereColumn('monto_pagado', '<', 'monto_asignado')
             ->get()
-            ->sum(fn($ep) => max(0, (float) ($ep->monto_asignado ?? $ep->evento->multa_monto ?? 0) - (float) ($ep->monto_pagado ?? 0)));
+            ->sum(fn($ep) => max(0, (float) ($ep->monto_asignado ?? 0) - (float) ($ep->monto_pagado ?? 0)));
 
         return (float) ($multas + $cobros);
     }

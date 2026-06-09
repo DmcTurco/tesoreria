@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Abono;
 use App\Models\Evento;
+use App\Services\CobroService;
 use App\Models\EventoPadre;
 use App\Models\EventoPrecioHistorial;
 use App\Models\Movimiento;
@@ -196,6 +197,10 @@ class EventoController extends Controller
                 $ep->update([
                     'monto_asignado'  => $montoNuevo,
                     'ajuste_resuelto' => $diferencia == 0 ? 1 : 0,
+                    // Si el padre ya cubrió el nuevo monto → marcar como presente
+                    'estado'          => $diferencia <= 0
+                        ? EventoPadre::ESTADO_PRESENTE
+                        : $ep->estado,
                 ]);
             }
 
@@ -628,38 +633,19 @@ class EventoController extends Controller
         $diferencia = (float) $ep->monto_asignado - (float) $ep->monto_pagado;
         $padre      = Padre::find($request->padre_id);
 
-        DB::transaction(function () use ($ep, $diferencia, $padre, $evento, $request) {
+        $servicio = new CobroService();
 
-            // Cobro extra → el padre paga más → INGRESO
+        DB::transaction(function () use ($ep, $diferencia, $padre, $evento, $request, $servicio) {
+
             if ($diferencia > 0 && $request->filled('monto_adicional')) {
-                $ep->monto_pagado = (float) $ep->monto_pagado + (float) $request->monto_adicional;
-
-                Movimiento::create([
-                    'tipo'          => Movimiento::TIPO_INGRESO,
-                    'monto'         => $request->monto_adicional,
-                    'descripcion'   => "Cobro adicional: {$padre->nombre} — {$evento->titulo}",
-                    'categoria'     => Movimiento::CAT_CUOTA,
-                    'fecha'         => now()->toDateString(),
-                    'registrado_por' => $request->user()->id,
-                    'evento_id'      => $evento->id,
-                ]);
+                $servicio->procesarCobroExtra($ep, (float) $request->monto_adicional, $request->user()->id, $evento, $padre);
             }
 
-            // Devolución → se regresa dinero → EGRESO
             if ($diferencia < 0) {
-                $ep->monto_pagado = (float) $ep->monto_pagado + $diferencia;
-
-                Movimiento::create([
-                    'tipo'          => Movimiento::TIPO_EGRESO,
-                    'monto'         => abs($diferencia),
-                    'descripcion'   => "Devolución: {$padre->nombre} — {$evento->titulo}",
-                    'categoria'     => Movimiento::CAT_CUOTA,
-                    'fecha'         => now()->toDateString(),
-                    'registrado_por' => $request->user()->id,
-                    'evento_id'      => $evento->id,
-                ]);
+                $servicio->procesarDevolucion($ep, abs($diferencia), $request->user()->id, $evento, $padre);
             }
 
+            // Si diferencia == 0 solo marcar resuelto (ya estaba sincronizado)
             $ep->ajuste_resuelto = 1;
             $ep->save();
         });

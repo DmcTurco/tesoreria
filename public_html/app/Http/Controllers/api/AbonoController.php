@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Abono;
 use App\Models\Multa;
 use App\Models\EventoPadre;
+use App\Services\CobroService;
 use App\Models\Movimiento;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -261,13 +262,8 @@ class AbonoController extends Controller
 
     private function actualizarCobro(int $id, float $pagado): void
     {
-        $ep    = EventoPadre::with('evento')->findOrFail($id);
-        $total = (float) optional($ep->evento)->multa_monto;
-        $estado = $pagado >= $total
-            ? EventoPadre::ESTADO_PRESENTE
-            : EventoPadre::ESTADO_PENDIENTE;
-
-        $ep->update(['monto_pagado' => $pagado, 'estado' => $estado]);
+        $ep = EventoPadre::findOrFail($id);
+        (new CobroService())->sincronizar($ep);
     }
 
     private function marcarPerdonada(string $tipo, int $id): void

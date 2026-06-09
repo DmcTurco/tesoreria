@@ -248,6 +248,11 @@ class PadreController extends Controller
                 $q->whereHas('evento', fn($q2) => $q2->where('tipo', Evento::TIPO_CUOTA))
                   ->orWhereNotNull('monto_asignado');
             })
+            ->where(function ($q) {
+                // Excluir filas donde ya pagó el monto completo (estado desactualizado)
+                $q->whereNull('monto_asignado')
+                  ->orWhereColumn('monto_pagado', '<', 'monto_asignado');
+            })
             ->with('evento')
             ->get();
 
