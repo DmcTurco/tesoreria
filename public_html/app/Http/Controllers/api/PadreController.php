@@ -15,9 +15,10 @@ use Illuminate\Support\Facades\Hash;
 class PadreController extends Controller
 {
     // GET /api/padres
-    public function index()
+    public function index(Request $request)
     {
         $padres = Padre::with('user')
+            ->when(!$request->boolean('con_retirados'), fn($q) => $q->where('retirado', false))
             ->orderBy('nombre')
             ->get();
 
@@ -105,6 +106,39 @@ class PadreController extends Controller
             'message' => 'Padre actualizado correctamente',
             'padre'   => $padre,
         ]);
+    }
+
+    // PUT /api/padres/{id}/retirar
+    public function retirar(Padre $padre)
+    {
+        if ($padre->retirado) {
+            return response()->json(['message' => 'El padre ya está retirado'], 422);
+        }
+
+        DB::transaction(function () use ($padre) {
+            // Anular multas pendientes y parciales
+            $padre->multas()
+                ->whereIn('estado', [Multa::ESTADO_PENDIENTE, Multa::ESTADO_PARCIAL])
+                ->update([
+                    'estado'             => Multa::ESTADO_ANULADO,
+                    'motivo_exoneracion' => 'Retiro del alumno',
+                ]);
+
+            // Exonerar cobros de eventos pendientes
+            EventoPadre::where('padre_id', $padre->id)
+                ->where('estado', EventoPadre::ESTADO_PENDIENTE)
+                ->update([
+                    'estado'             => EventoPadre::ESTADO_EXONERADO,
+                    'motivo_exoneracion' => 'Retiro del alumno',
+                ]);
+
+            $padre->update([
+                'retirado'     => true,
+                'fecha_retiro' => now()->toDateString(),
+            ]);
+        });
+
+        return response()->json(['message' => 'Padre retirado correctamente']);
     }
 
     // DELETE /api/padres/{id}

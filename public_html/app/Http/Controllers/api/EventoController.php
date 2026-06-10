@@ -300,6 +300,92 @@ class EventoController extends Controller
         return response()->json(['message' => 'Evento cerrado correctamente']);
     }
 
+    /**
+     * POST /api/eventos/{evento}/regenerar-multas
+     * Re-genera multas para un evento ya cerrado (útil cuando se olvidó activar tiene_multa antes de cerrar).
+     * Activa tiene_multa si estaba apagado, luego corre la misma lógica de cerrar().
+     * Usa firstOrCreate → seguro de ejecutar múltiples veces.
+     */
+    public function regenerarMultas(Evento $evento)
+    {
+        if (!$evento->tiene_multa) {
+            $evento->update(['tiene_multa' => true]);
+        }
+
+        $creadas = 0;
+
+        DB::transaction(function () use ($evento, &$creadas) {
+            $montosPorPadre = [];
+
+            // Filas sin turnos
+            $faltososSinTurnos = EventoPadre::where('evento_id', $evento->id)
+                ->where('estado', EventoPadre::ESTADO_AUSENTE)
+                ->whereNull('turnos_estado')
+                ->get();
+
+            foreach ($faltososSinTurnos as $ep) {
+                $monto = (float) ($ep->monto_asignado ?? $evento->multa_monto);
+                $montosPorPadre[$ep->padre_id] = [
+                    'monto'    => ($montosPorPadre[$ep->padre_id]['monto'] ?? 0) + $monto,
+                    'concepto' => "Inasistencia: {$evento->titulo}",
+                ];
+            }
+
+            // Filas con turnos (bapers)
+            $filasConTurnos = EventoPadre::where('evento_id', $evento->id)
+                ->whereNotNull('turnos_estado')
+                ->whereNotIn('estado', [
+                    EventoPadre::ESTADO_EXONERADO,
+                    EventoPadre::ESTADO_JUSTIFICADO,
+                ])
+                ->get();
+
+            foreach ($filasConTurnos as $ep) {
+                $estados  = $ep->turnos_estado ?? [0, 0];
+                $ausentes = count(array_filter($estados, fn($e) => $e !== 1));
+                if ($ausentes === 0) continue;
+
+                $montoTotal = (float) ($ep->monto_asignado ?? $evento->multa_monto);
+                $monto      = round($montoTotal / count($estados) * $ausentes, 2);
+
+                $faltóEntrada = $estados[0] !== 1;
+                $faltóSalida  = $estados[1] !== 1;
+
+                $turnosTexto = match (true) {
+                    $faltóEntrada && $faltóSalida => 'entrada y salida',
+                    $faltóEntrada                 => 'entrada',
+                    default                       => 'salida',
+                };
+
+                $montosPorPadre[$ep->padre_id] = [
+                    'monto'    => ($montosPorPadre[$ep->padre_id]['monto'] ?? 0) + $monto,
+                    'concepto' => "Inasistencia ({$turnosTexto}): {$evento->titulo}",
+                ];
+            }
+
+            foreach ($montosPorPadre as $padreId => $data) {
+                [$multa, $nueva] = [
+                    Multa::firstOrCreate(
+                        ['padre_id' => $padreId, 'evento_id' => $evento->id],
+                        [
+                            'monto'          => $data['monto'],
+                            'concepto'       => $data['concepto'],
+                            'estado'         => Multa::ESTADO_PENDIENTE,
+                            'fecha_generada' => now()->toDateString(),
+                        ]
+                    ),
+                    false,
+                ];
+                if ($multa->wasRecentlyCreated) $creadas++;
+            }
+        });
+
+        return response()->json([
+            'message' => "Multas regeneradas correctamente",
+            'creadas' => $creadas,
+        ]);
+    }
+
     // POST /eventos/{evento}/agregar-padre
     // Para guardia: requiere fecha. Para otros: sin fecha.
     public function agregarPadre(Request $request, Evento $evento)

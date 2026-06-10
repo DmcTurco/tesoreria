@@ -12,6 +12,8 @@ class Padre extends Model
         'hijo',
         'grado',
         'telefono',
+        'retirado',
+        'fecha_retiro',
     ];
 
     // ── Relaciones ────────────────────────────────────────────────────────────

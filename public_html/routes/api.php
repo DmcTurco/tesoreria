@@ -81,6 +81,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::put('/padres/{padre}',                [PadreController::class, 'update']);
         Route::delete('/padres/{padre}',             [PadreController::class, 'destroy']);
         Route::put('/padres/{padre}/reset-password', [PadreController::class, 'resetPassword']);
+        Route::put('/padres/{padre}/retirar',        [PadreController::class, 'retirar']);
 
         // Multas
         Route::get('/multas/{multa}',           [MultaController::class, 'show']);
@@ -107,7 +108,8 @@ Route::middleware('auth:sanctum')->group(function () {
         // Eventos
         Route::get('eventos/{evento}/ajustes',          [EventoController::class, 'ajustes']);
         Route::get('/eventos/{evento}/movimientos', [EventoController::class, 'movimientos']);
-        Route::post('eventos/{evento}/resolver-ajuste', [EventoController::class, 'resolverAjuste']);
+        Route::post('eventos/{evento}/resolver-ajuste',   [EventoController::class, 'resolverAjuste']);
+        Route::post('eventos/{evento}/regenerar-multas', [EventoController::class, 'regenerarMultas']);
 
         Route::post('/eventos',                              [EventoController::class, 'store']);
         Route::put('/eventos/{evento}',                      [EventoController::class, 'update']);
