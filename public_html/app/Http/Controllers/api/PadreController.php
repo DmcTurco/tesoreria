@@ -66,7 +66,7 @@ class PadreController extends Controller
 
             // Auto-asignar a eventos de cuota activos
             Evento::where('tipo', Evento::TIPO_CUOTA)
-                ->where('estado', Evento::ESTADO_ACTIVO)
+                ->where('estado', 0) // 0 = activo, 1 = cerrado
                 ->get()
                 ->each(function ($evento) use ($padre) {
                     EventoPadre::firstOrCreate(
@@ -276,17 +276,22 @@ class PadreController extends Controller
             return response()->json(['message' => 'Sin perfil de padre'], 404);
         }
 
+        // Solo cuotas pendientes de pago (tipo=3)
         $cobros = $padre->eventoPadres()
-            ->where('estado', 0)
-            ->where(function ($q) {
-                $q->whereHas('evento', fn($q2) => $q2->where('tipo', Evento::TIPO_CUOTA))
-                  ->orWhereNotNull('monto_asignado');
-            })
-            ->where(function ($q) {
-                // Excluir filas donde ya pagó el monto completo (estado desactualizado)
-                $q->whereNull('monto_asignado')
-                  ->orWhereColumn('monto_pagado', '<', 'monto_asignado');
-            })
+            ->where('estado', EventoPadre::ESTADO_PENDIENTE)
+            ->whereHas('evento', fn($q) => $q->where('tipo', Evento::TIPO_CUOTA))
+            ->whereColumn('monto_pagado', '<', 'monto_asignado')
+            ->with('evento')
+            ->get();
+
+        // Asignaciones a eventos de asistencia (bapers, faenas, reuniones) aún activos (no cerrados)
+        $asignaciones = $padre->eventoPadres()
+            ->whereIn('estado', [EventoPadre::ESTADO_PENDIENTE])
+            ->whereNotIn('estado', [EventoPadre::ESTADO_EXONERADO, EventoPadre::ESTADO_JUSTIFICADO])
+            ->whereHas('evento', fn($q) => $q
+                ->whereIn('tipo', [Evento::TIPO_GUARDIA, Evento::TIPO_FAENA, Evento::TIPO_REUNION, Evento::TIPO_ACTIVIDAD])
+                ->where('estado', 0) // 0 = activo, 1 = cerrado
+            )
             ->with('evento')
             ->get();
 
@@ -307,6 +312,7 @@ class PadreController extends Controller
             }),
             'eventos'     => $padre->eventoPadres()->with('evento')->orderByDesc('created_at')->get(),
             'cobros'      => $cobros,
+            'asignaciones' => $asignaciones,
         ]);
     }
 
