@@ -7,6 +7,7 @@ use App\Models\Abono;
 use App\Models\Multa;
 use App\Models\EventoPadre;
 use App\Services\CobroService;
+use App\Services\PushNotificationService;
 use App\Models\Movimiento;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -117,9 +118,91 @@ class AbonoController extends Controller
             ]);
 
             $this->actualizarDeuda($request->tipo_deuda, $request->deuda_id);
+
+            (new PushNotificationService())->enviarAPadre(
+                $abono->padre,
+                'Pago registrado',
+                'Se registró un pago de S/ ' . number_format((float) $abono->monto, 2) . '.',
+                ['tipo' => 'abono', 'abono_id' => (string) $abono->id]
+            );
         });
 
         return response()->json(['success' => true, 'message' => 'Abono registrado correctamente.']);
+    }
+
+    // POST /api/abonos/multiples
+    // Registra varios abonos de un mismo padre en una sola operación y envía
+    // UNA sola notificación push consolidada (no una por cada deuda pagada).
+    public function storeMultiples(Request $request)
+    {
+        $request->validate([
+            'padre_id' => 'required|exists:padres,id',
+            'fecha'    => 'required|date',
+            'items'    => 'required|array|min:1',
+            'items.*.tipo_deuda' => 'required|in:multa,cobro',
+            'items.*.deuda_id'   => 'required|integer',
+            'items.*.monto'      => 'required|numeric|min:0.01',
+        ]);
+
+        $padre = null;
+        $totalRegistrado = 0.0;
+
+        DB::transaction(function () use ($request, &$padre, &$totalRegistrado) {
+            foreach ($request->items as $item) {
+                $abono = Abono::create([
+                    'padre_id'       => $request->padre_id,
+                    'tipo_deuda'     => $item['tipo_deuda'],
+                    'deuda_id'       => $item['deuda_id'],
+                    'monto'          => $item['monto'],
+                    'fecha'          => $request->fecha,
+                    'registrado_por' => auth()->id(),
+                    'estado'         => Abono::ESTADO_ACTIVO,
+                ])->load('padre');
+
+                $padre = $abono->padre;
+                $totalRegistrado += (float) $abono->monto;
+
+                $eventoId = null;
+                if ($abono->tipo_deuda === 'cobro') {
+                    $ep = EventoPadre::with('evento')->find($abono->deuda_id);
+                    $eventoId = $ep?->evento_id;
+                }
+
+                Movimiento::create([
+                    'tipo'           => Movimiento::TIPO_INGRESO,
+                    'monto'          => $abono->monto,
+                    'descripcion'    => 'Abono ' . $abono->tipo_deuda . ' - ' . $abono->padre->nombre,
+                    'categoria'      => Movimiento::CAT_ABONO,
+                    'fecha'          => $abono->fecha,
+                    'registrado_por' => auth()->id(),
+                    'abono_id'       => $abono->id,
+                    'evento_id'      => $eventoId,
+                ]);
+
+                $this->actualizarDeuda($abono->tipo_deuda, $abono->deuda_id);
+            }
+        });
+
+        if ($padre) {
+            $cantidad = count($request->items);
+            $cuerpo = $cantidad === 1
+                ? 'Se registró un pago de S/ ' . number_format($totalRegistrado, 2) . '.'
+                : "Se registró un pago de S/ " . number_format($totalRegistrado, 2) . " ({$cantidad} deudas).";
+
+            (new PushNotificationService())->enviarAPadre(
+                $padre,
+                'Pago registrado',
+                $cuerpo,
+                ['tipo' => 'abono_multiple', 'cantidad' => (string) $cantidad]
+            );
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => count($request->items) === 1
+                ? 'Abono registrado correctamente.'
+                : count($request->items) . ' abonos registrados correctamente.',
+        ]);
     }
 
     // POST /api/abonos/{id}/anular

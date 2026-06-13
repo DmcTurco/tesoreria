@@ -11,6 +11,7 @@ use App\Models\EventoPrecioHistorial;
 use App\Models\Movimiento;
 use App\Models\Multa;
 use App\Models\Padre;
+use App\Services\PushNotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
@@ -472,6 +473,16 @@ class EventoController extends Controller
             'exonerado_por'      => $request->user()->id,
         ]);
 
+        if ($ep->padre) {
+            $etiqueta = $request->tipo === 'exonerado' ? 'exonerado' : 'justificado';
+            (new PushNotificationService())->enviarAPadre(
+                $ep->padre,
+                'Asignación ' . $etiqueta,
+                "Fuiste {$etiqueta} de: {$evento->titulo}. Ya no debes asistir ni pagar por esta asignación.",
+                ['tipo' => 'exoneracion', 'evento_id' => (string) $evento->id]
+            );
+        }
+
         return response()->json([
             'message' => 'Estado actualizado correctamente',
             'estado'  => $request->tipo,
@@ -663,6 +674,15 @@ class EventoController extends Controller
             'exonerado_por'      => $request->user()->id,
             'monto_pagado'       => 0,
         ]);
+
+        if ($ep->padre) {
+            (new PushNotificationService())->enviarAPadre(
+                $ep->padre,
+                'Asignación exonerado',
+                "Fuiste exonerado de: {$evento->titulo}. Ya no debes asistir ni pagar por esta asignación.",
+                ['tipo' => 'exoneracion', 'evento_id' => (string) $evento->id]
+            );
+        }
 
         return response()->json(['message' => 'Padre exonerado correctamente']);
     }
@@ -909,9 +929,59 @@ class EventoController extends Controller
 
         $turnosEstado = $evento->tiene_turnos ? [0, 0] : null;
 
-        EventoPadre::firstOrCreate(
+        $ep = EventoPadre::firstOrCreate(
             ['evento_id' => $evento->id, 'padre_id' => $padreId, 'fecha' => $fecha],
             ['estado' => EventoPadre::ESTADO_PENDIENTE, 'monto_asignado' => $montoBase, 'turnos_estado' => $turnosEstado]
+        );
+
+        if ($ep->wasRecentlyCreated) {
+            $this->notificarAsignacion($evento, $ep);
+        }
+    }
+
+    /**
+     * Notifica al padre que fue asignado a un evento (cobro, guardia, faena, reunión, actividad).
+     */
+    private function notificarAsignacion(Evento $evento, EventoPadre $ep): void
+    {
+        $padre = $ep->padre ?? Padre::find($ep->padre_id);
+        if (!$padre) return;
+
+        $servicio = new PushNotificationService();
+
+        if ($evento->esCuota()) {
+            $servicio->enviarAPadre(
+                $padre,
+                'Nuevo cobro pendiente',
+                "Tienes un nuevo cobro: {$evento->titulo} — S/ " . number_format((float) ($ep->monto_asignado ?? $evento->multa_monto), 2) . '.',
+                ['tipo' => 'cobro', 'evento_id' => (string) $evento->id]
+            );
+            return;
+        }
+
+        if ($evento->esGuardia()) {
+            $fechaTexto = $ep->fecha ? ' el ' . $ep->fecha->format('d/m/Y') : '';
+            $servicio->enviarAPadre(
+                $padre,
+                'Te toca guardia',
+                "Fuiste asignado a la guardia: {$evento->titulo}{$fechaTexto}.",
+                ['tipo' => 'guardia', 'evento_id' => (string) $evento->id]
+            );
+            return;
+        }
+
+        $tipoTexto = match ($evento->tipo) {
+            Evento::TIPO_FAENA => 'una faena',
+            Evento::TIPO_REUNION => 'una reunión',
+            Evento::TIPO_ACTIVIDAD => 'una actividad',
+            default => 'un evento',
+        };
+
+        $servicio->enviarAPadre(
+            $padre,
+            'Nueva asignación',
+            "Fuiste asignado a {$tipoTexto}: {$evento->titulo}.",
+            ['tipo' => 'asignacion', 'evento_id' => (string) $evento->id]
         );
     }
 }

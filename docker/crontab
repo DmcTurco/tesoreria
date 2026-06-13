@@ -1,0 +1,2 @@
+# Laravel scheduler — revisa cada minuto si hay tareas programadas que deban ejecutarse
+* * * * * cd /var/www && php artisan schedule:run >> /var/www/storage/logs/schedule.log 2>&1

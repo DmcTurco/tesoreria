@@ -283,6 +283,26 @@ class AdminController extends Controller
         }
     }
 
+    // POST /api/admin/enviar-recordatorios
+    public function enviarRecordatorios()
+    {
+        try {
+            Artisan::call('recordatorios:enviar');
+            $output = Artisan::output();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Comando de recordatorios ejecutado correctamente',
+                'output'  => $output,
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
     // POST /api/admin/migrate-fresh
     public function migrateFresh()
     {

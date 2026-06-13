@@ -14,6 +14,8 @@ class Padre extends Model
         'telefono',
         'retirado',
         'fecha_retiro',
+        'fcm_token',
+        'fcm_platform',
     ];
 
     // ── Relaciones ────────────────────────────────────────────────────────────

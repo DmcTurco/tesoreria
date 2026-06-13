@@ -316,6 +316,29 @@ class PadreController extends Controller
         ]);
     }
 
+    // POST /fcm-token  (role:2)
+    // Guarda/actualiza el token de notificaciones push (FCM) del dispositivo
+    // del padre autenticado, para poder enviarle avisos cuando la app esté cerrada.
+    public function guardarFcmToken(Request $request)
+    {
+        $request->validate([
+            'token'      => 'required|string|max:255',
+            'plataforma' => 'nullable|string|max:20',
+        ]);
+
+        $padre = $request->user()->padre;
+        if (!$padre) {
+            return response()->json(['message' => 'Sin perfil de padre'], 404);
+        }
+
+        $padre->update([
+            'fcm_token'    => $request->token,
+            'fcm_platform' => $request->plataforma,
+        ]);
+
+        return response()->json(['message' => 'Token registrado correctamente']);
+    }
+
     // GET /mi-estado-tesorero  (role:0)
     public function miEstadoTesorero(Request $request)
     {

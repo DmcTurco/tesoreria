@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Middleware\RoleMiddleware;
+use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -17,6 +18,10 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'role' => \App\Http\Middleware\RoleMiddleware::class,
         ]);
+    })
+    ->withSchedule(function (Schedule $schedule): void {
+        // Recordatorio de guardia/faena del día siguiente, todos los días a las 20:00
+        $schedule->command('recordatorios:enviar')->dailyAt('20:00');
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         //

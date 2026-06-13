@@ -47,6 +47,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::middleware('role:2')->group(function () {
         Route::get('/mi-qr',     [PadreController::class, 'miQr']);
         Route::get('/mi-estado', [PadreController::class, 'miEstado']);
+        Route::post('/fcm-token', [PadreController::class, 'guardarFcmToken']);
     });
 
     // ── Tesorero + Profesora (0,1) ────────────────────────────────────────────
@@ -67,6 +68,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/admin/restaurar-movimientos',      [AdminController::class, 'restaurarMovimientos']);
         Route::post('/admin/fix-cobros-estado',          [AdminController::class, 'fixCobrosEstado']);
         Route::post('/admin/fix-monto-pagado-cobros',    [AdminController::class, 'fixMontoPagadoCobros']);
+        Route::post('/admin/enviar-recordatorios',       [AdminController::class, 'enviarRecordatorios']);
 
 
         // Estado padre (para modal de pago)
@@ -92,6 +94,7 @@ Route::middleware('auth:sanctum')->group(function () {
         // Abonos  area flujo tecnico de cobro
         Route::get('/abonos',              [AbonoController::class, 'index']);
         Route::post('/abonos',             [AbonoController::class, 'store']);
+        Route::post('/abonos/multiples',   [AbonoController::class, 'storeMultiples']);
         Route::post('/abonos/{id}/anular', [AbonoController::class, 'anular']);
 
         // Movimientos

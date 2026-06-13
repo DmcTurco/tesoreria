@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Carbon\Carbon;
 use App\Models\Movimiento;
+use App\Services\PushNotificationService;
 
 class Evento extends Model
 {
@@ -150,6 +151,15 @@ class Evento extends Model
             ]);
 
             $ep->update(['multa_generada' => true]);
+
+            if ($ep->padre) {
+                (new PushNotificationService())->enviarAPadre(
+                    $ep->padre,
+                    'Nueva multa generada',
+                    "Se generó una multa de S/ " . number_format((float) $this->multa_monto, 2) . " por ausencia a {$this->titulo}{$descripcionFecha}.",
+                    ['tipo' => 'multa', 'evento_id' => (string) $this->id]
+                );
+            }
         }
 
         return $ausentes->count();
