@@ -64,9 +64,9 @@ class Padre extends Model
         $cobros = $this->eventoPadres()
             ->where('estado', EventoPadre::ESTADO_PENDIENTE)
             ->whereHas('evento', fn($q) => $q->where('tipo', Evento::TIPO_CUOTA))
-            ->whereColumn('monto_pagado', '<', 'monto_asignado')
+            ->with('evento')
             ->get()
-            ->sum(fn($ep) => max(0, (float) ($ep->monto_asignado ?? 0) - (float) ($ep->monto_pagado ?? 0)));
+            ->sum(fn($ep) => $ep->saldo_pendiente);
 
         return (float) ($multas + $cobros);
     }

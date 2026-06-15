@@ -22,6 +22,9 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withSchedule(function (Schedule $schedule): void {
         // Recordatorio de guardia/faena del día siguiente, todos los días a las 20:00
         $schedule->command('recordatorios:enviar')->dailyAt('20:00');
+
+        // Recordatorio de multas/cobros pendientes de pago, martes y jueves a las 09:00
+        $schedule->command('recordatorios:deudas')->twiceWeekly(2, 4, '09:00');
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         //

@@ -29,7 +29,7 @@ class CobroService
             ->where('estado', Abono::ESTADO_ACTIVO)
             ->sum('monto');
 
-        $montoAsignado = (float) $ep->monto_asignado;
+        $montoAsignado = (float) ($ep->monto_asignado ?? $ep->evento->multa_monto ?? 0);
 
         $estado = $ep->estado;
         if ($montoAsignado > 0) {

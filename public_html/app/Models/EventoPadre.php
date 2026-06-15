@@ -43,6 +43,14 @@ class EventoPadre extends Model
         'turnos_estado'   => 'array',   // [entrada, salida]  →  0=pendiente, 1=presente
     ];
 
+    // Se incluyen automáticamente en la respuesta JSON (toArray/toJson),
+    // así el front (React y Flutter) no necesita recalcular el fallback
+    // monto_asignado ?? evento.multa_monto.
+    protected $appends = [
+        'monto_real',
+        'saldo_pendiente',
+    ];
+
     // ── Relaciones ────────────────────────────────────────────────────────────
 
     public function evento()
@@ -92,5 +100,27 @@ class EventoPadre extends Model
     {
         return (float) $this->monto_asignado - (float) $this->monto_pagado;
         // positivo = debe más | negativo = se le devuelve
+    }
+
+    /**
+     * Monto real de la cuota/cobro: usa `monto_asignado` si está definido
+     * (> 0); si no, cae al `multa_monto` del evento asociado.
+     * Centraliza el fallback que antes se repetía en backend y front.
+     */
+    public function getMontoRealAttribute(): float
+    {
+        $asignado = (float) ($this->monto_asignado ?? 0);
+        if ($asignado > 0) {
+            return $asignado;
+        }
+
+        return (float) ($this->evento?->multa_monto ?? 0);
+    }
+
+    /** Saldo pendiente real (monto_real - monto_pagado), nunca negativo. */
+    public function getSaldoPendienteAttribute(): float
+    {
+        $saldo = $this->monto_real - (float) ($this->monto_pagado ?? 0);
+        return max(0, $saldo);
     }
 }

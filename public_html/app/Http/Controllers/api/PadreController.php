@@ -280,9 +280,13 @@ class PadreController extends Controller
         $cobros = $padre->eventoPadres()
             ->where('estado', EventoPadre::ESTADO_PENDIENTE)
             ->whereHas('evento', fn($q) => $q->where('tipo', Evento::TIPO_CUOTA))
-            ->whereColumn('monto_pagado', '<', 'monto_asignado')
             ->with('evento')
-            ->get();
+            ->get()
+            ->filter(function ($ep) {
+                $monto = (float) ($ep->monto_asignado ?? $ep->evento->multa_monto ?? 0);
+                return (float) ($ep->monto_pagado ?? 0) < $monto;
+            })
+            ->values();
 
         // Asignaciones a eventos de asistencia (bapers, faenas, reuniones) aún activos (no cerrados)
         $asignaciones = $padre->eventoPadres()

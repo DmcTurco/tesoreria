@@ -214,6 +214,27 @@ class AdminController extends Controller
                 }
             }
 
+            // 3. Sincronizar secuencias (Postgres): tras insertar filas con "id" explícito,
+            //    la secuencia queda desfasada y la próxima inserción sin id choca con
+            //    "duplicate key value violates unique constraint ..._pkey".
+            if ($driver === 'pgsql') {
+                foreach ($data as $table => $rows) {
+                    if (in_array($table, $skip) || !Schema::hasTable($table)) continue;
+                    if (empty($rows) || !Schema::hasColumn($table, 'id')) continue;
+
+                    try {
+                        DB::statement("
+                            SELECT setval(
+                                pg_get_serial_sequence('\"{$table}\"', 'id'),
+                                COALESCE((SELECT MAX(id) FROM \"{$table}\"), 1)
+                            )
+                        ");
+                    } catch (\Exception $e) {
+                        $errors[] = "Sync sequence {$table}: " . $e->getMessage();
+                    }
+                }
+            }
+
             return response()->json([
                 'success' => empty($errors),
                 'message' => empty($errors)
@@ -293,6 +314,26 @@ class AdminController extends Controller
             return response()->json([
                 'success' => true,
                 'message' => 'Comando de recordatorios ejecutado correctamente',
+                'output'  => $output,
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    // POST /api/admin/enviar-recordatorios-deudas
+    public function enviarRecordatoriosDeudas()
+    {
+        try {
+            Artisan::call('recordatorios:deudas');
+            $output = Artisan::output();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Comando de recordatorios de deuda ejecutado correctamente',
                 'output'  => $output,
             ]);
         } catch (\Exception $e) {

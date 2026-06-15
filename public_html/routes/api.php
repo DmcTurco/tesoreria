@@ -69,6 +69,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/admin/fix-cobros-estado',          [AdminController::class, 'fixCobrosEstado']);
         Route::post('/admin/fix-monto-pagado-cobros',    [AdminController::class, 'fixMontoPagadoCobros']);
         Route::post('/admin/enviar-recordatorios',       [AdminController::class, 'enviarRecordatorios']);
+        Route::post('/admin/enviar-recordatorios-deudas', [AdminController::class, 'enviarRecordatoriosDeudas']);
 
 
         // Estado padre (para modal de pago)
