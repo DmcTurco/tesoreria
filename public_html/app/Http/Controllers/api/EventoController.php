@@ -923,7 +923,7 @@ class EventoController extends Controller
      */
     private function crearFilasPadre(Evento $evento, int $padreId, ?string $fecha): void
     {
-        $montoBase = $evento->esCuota()
+        $montoBase = ($evento->esCuota() || $evento->esActividad())
             ? (float) $evento->multa_monto
             : ($evento->tiene_multa ? (float) $evento->multa_monto : null);
 

@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Descargar App — Tesorería</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #fafaf9;
+      color: #1c1917;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 32px 16px 48px;
+    }
+
+    .card {
+      background: white;
+      border-radius: 24px;
+      box-shadow: 0 2px 16px rgba(0,0,0,0.07);
+      padding: 32px 24px;
+      max-width: 420px;
+      width: 100%;
+    }
+
+    .logo {
+      width: 72px;
+      height: 72px;
+      background: #f59e0b;
+      border-radius: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 20px;
+      font-size: 32px;
+    }
+
+    h1 {
+      text-align: center;
+      font-size: 22px;
+      font-weight: 900;
+      color: #1c1917;
+      margin-bottom: 4px;
+    }
+
+    .subtitle {
+      text-align: center;
+      font-size: 14px;
+      color: #a8a29e;
+      margin-bottom: 28px;
+    }
+
+    .btn-download {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      width: 100%;
+      padding: 16px;
+      background: #f59e0b;
+      color: white;
+      font-size: 16px;
+      font-weight: 800;
+      border-radius: 16px;
+      text-decoration: none;
+      transition: background 0.2s;
+      margin-bottom: 24px;
+    }
+
+    .btn-download:hover { background: #d97706; }
+
+    .btn-download svg { flex-shrink: 0; }
+
+    .divider {
+      font-size: 11px;
+      font-weight: 700;
+      color: #d6d3d1;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      text-align: center;
+      margin-bottom: 20px;
+    }
+
+    .steps { display: flex; flex-direction: column; gap: 14px; }
+
+    .step {
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+    }
+
+    .step-num {
+      width: 28px;
+      height: 28px;
+      background: #fff7ed;
+      color: #f59e0b;
+      font-size: 13px;
+      font-weight: 900;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      margin-top: 1px;
+    }
+
+    .step-text { font-size: 14px; color: #44403c; line-height: 1.5; }
+    .step-text strong { color: #1c1917; }
+
+    .warning {
+      margin-top: 24px;
+      background: #fff7ed;
+      border: 1px solid #fed7aa;
+      border-radius: 14px;
+      padding: 14px 16px;
+      font-size: 13px;
+      color: #9a3412;
+      line-height: 1.5;
+    }
+
+    .warning strong { display: block; margin-bottom: 2px; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="logo">📚</div>
+    <h1>App de Tesorería</h1>
+    <p class="subtitle">Descarga la app para ver tu estado de cuenta</p>
+
+    <a class="btn-download" href="/app.apk" download>
+      <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+        <polyline points="7 10 12 15 17 10"/>
+        <line x1="12" y1="15" x2="12" y2="3"/>
+      </svg>
+      Descargar App (Android)
+    </a>
+
+    <div class="divider">Cómo instalar</div>
+
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-text">Toca el botón <strong>Descargar App</strong> y espera que termine la descarga.</div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-text">Abre el archivo descargado desde las <strong>notificaciones</strong> o desde tu carpeta de <strong>Descargas</strong>.</div>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-text">Si aparece un aviso de seguridad, toca <strong>"Instalar de todas formas"</strong> o habilita <strong>"Permitir de esta fuente"</strong>.</div>
+      </div>
+      <div class="step">
+        <div class="step-num">4</div>
+        <div class="step-text">Toca <strong>Instalar</strong> y espera unos segundos. ¡Listo!</div>
+      </div>
+      <div class="step">
+        <div class="step-num">5</div>
+        <div class="step-text">Inicia sesión con tu <strong>código de padre</strong> (ej: PAD-0001) y la contraseña que te asignaron.</div>
+      </div>
+    </div>
+
+    <div class="warning">
+      <strong>⚠️ ¿Ya tenés la app instalada?</strong>
+      Para actualizar, descargá e instalá el archivo nuevamente. Tus datos no se borran.
+    </div>
+  </div>
+</body>
+</html>
