@@ -28,7 +28,7 @@ class EnviarRecordatoriosDeudaCommand extends Command
         $servicio = new PushNotificationService();
         $enviados = 0;
 
-        Padre::whereNotNull('fcm_token')->each(function (Padre $padre) use ($servicio, &$enviados) {
+        Padre::whereHas('fcmTokens')->each(function (Padre $padre) use ($servicio, &$enviados) {
             // Multas pendientes o parciales (saldo > 0)
             $multasPendientes = Multa::where('padre_id', $padre->id)
                 ->whereIn('estado', [Multa::ESTADO_PENDIENTE, Multa::ESTADO_PARCIAL])

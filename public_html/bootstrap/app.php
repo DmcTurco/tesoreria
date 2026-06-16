@@ -24,7 +24,8 @@ return Application::configure(basePath: dirname(__DIR__))
         $schedule->command('recordatorios:enviar')->dailyAt('20:00');
 
         // Recordatorio de multas/cobros pendientes de pago, martes y jueves a las 09:00
-        $schedule->command('recordatorios:deudas')->twiceWeekly(2, 4, '09:00');
+        // (expresión cron: minuto hora * * día-semana, 2=martes, 4=jueves)
+        $schedule->command('recordatorios:deudas')->cron('0 9 * * 2,4');
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         //

@@ -16,9 +16,12 @@ return new class extends Migration
             $table->unsignedBigInteger('evento_id');
             $table->unsignedBigInteger('padre_id');
             $table->date('fecha')->nullable();           // solo guardias
+            $table->json('turnos_estado')->nullable();   // null = sin turnos | [0,0] = ambos pendientes
             // 0 = pendiente | 1 = presente | 2 = ausente | 3 = justificado | 4 = exonerado
             $table->unsignedTinyInteger('estado')->default(0);
             $table->decimal('monto_pagado', 10, 2)->default(0);
+            $table->decimal('monto_asignado', 10, 2)->nullable();
+            $table->unsignedTinyInteger('ajuste_resuelto')->default(1); // 0=pendiente ajuste | 1=resuelto
             $table->timestamp('hora_marcado')->nullable();
             $table->boolean('multa_generada')->default(false);
             $table->text('motivo_exoneracion')->nullable();

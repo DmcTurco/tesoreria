@@ -22,8 +22,9 @@ return new class extends Migration
             $table->string('comprobante')->nullable();
             $table->text('observaciones')->nullable();
             $table->unsignedBigInteger('registrado_por')->nullable();
-            $table->unsignedTinyInteger('abono_id')->nullable();
-            $table->unsignedTinyInteger('movimiento_anulado_id')->nullable();
+            $table->unsignedBigInteger('abono_id')->nullable();
+            $table->unsignedBigInteger('movimiento_anulado_id')->nullable();
+            $table->unsignedBigInteger('evento_id')->nullable();
             $table->timestamps();
             $table->softDeletes();
         });

@@ -9,6 +9,23 @@ use Illuminate\Http\Request;
 
 class EventoPadreController extends Controller
 {
+    // PUT /api/evento-padres/{id}/revertir-exoneracion  (role:0)
+    // Revierte un evento_padre exonerado de vuelta a estado pendiente.
+    public function revertirExoneracion(EventoPadre $eventoPadre)
+    {
+        if ($eventoPadre->estado !== EventoPadre::ESTADO_EXONERADO) {
+            return response()->json(['message' => 'El registro no está exonerado'], 422);
+        }
+
+        $eventoPadre->update([
+            'estado'             => EventoPadre::ESTADO_PENDIENTE,
+            'motivo_exoneracion' => null,
+            'exonerado_por'      => null,
+        ]);
+
+        return response()->json(['message' => 'Exoneración revertida correctamente']);
+    }
+
     // public function registrarAsistencia(Request $request, Evento $evento)
     // {
     //     $request->validate([

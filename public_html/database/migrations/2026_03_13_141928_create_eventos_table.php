@@ -25,6 +25,8 @@ return new class extends Migration
             $table->unsignedTinyInteger('padres_por_dia')->nullable(); // solo guardias
             $table->string('lugar')->nullable();
             $table->boolean('tiene_multa')->default(false);
+            // 0 = sin turnos | 1 = tiene 2 turnos (entrada y salida)
+            $table->tinyInteger('tiene_turnos')->default(0);
             $table->decimal('multa_monto', 8, 2)->default(10.00);
             // 0 = activo | 1 = cerrado
             $table->unsignedTinyInteger('estado')->default(0);

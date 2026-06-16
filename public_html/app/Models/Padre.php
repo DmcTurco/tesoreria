@@ -47,6 +47,12 @@ class Padre extends Model
         return $this->hasMany(EventoPadre::class);
     }
 
+    /** Tokens de notificaciones push (uno por dispositivo registrado). */
+    public function fcmTokens()
+    {
+        return $this->hasMany(PadreFcmToken::class);
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     /** Total de deuda pendiente (multas + cobros de eventos) */

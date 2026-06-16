@@ -18,6 +18,10 @@ return new class extends Migration
             $table->string('hijo');               // solo nombre del menor, sin datos sensibles
             $table->string('grado');
             $table->string('telefono')->nullable();
+            $table->boolean('retirado')->default(false);
+            $table->date('fecha_retiro')->nullable();
+            $table->string('fcm_token')->nullable();
+            $table->string('fcm_platform')->nullable();
             $table->timestamps();
             $table->softDeletes();
         });

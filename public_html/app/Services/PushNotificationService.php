@@ -31,7 +31,9 @@ class PushNotificationService
      */
     public function enviarAPadre(Padre $padre, string $titulo, string $cuerpo, array $data = []): void
     {
-        if (empty($padre->fcm_token)) {
+        $tokens = $padre->fcmTokens;
+
+        if ($tokens === null || $tokens->isEmpty()) {
             return;
         }
 
@@ -40,20 +42,22 @@ class PushNotificationService
             return;
         }
 
-        try {
-            $message = CloudMessage::new()
-                ->withTarget('token', $padre->fcm_token)
-                ->withNotification(FcmNotification::create($titulo, $cuerpo))
-                ->withData($data)
-                ->withDefaultSounds();
+        foreach ($tokens as $fcmToken) {
+            try {
+                $message = CloudMessage::new()
+                    ->withTarget('token', $fcmToken->token)
+                    ->withNotification(FcmNotification::create($titulo, $cuerpo))
+                    ->withData($data)
+                    ->withDefaultSounds();
 
-            Firebase::messaging()->send($message);
-        } catch (NotFound|InvalidArgument $e) {
-            // Token inválido o expirado: lo limpiamos para no seguir intentando.
-            Log::info('Token FCM inválido para padre ' . $padre->id . ', se elimina.', ['error' => $e->getMessage()]);
-            $padre->update(['fcm_token' => null, 'fcm_platform' => null]);
-        } catch (\Throwable $e) {
-            Log::warning('Error enviando notificación push a padre ' . $padre->id, ['error' => $e->getMessage()]);
+                Firebase::messaging()->send($message);
+            } catch (NotFound|InvalidArgument $e) {
+                // Token inválido o expirado (app desinstalada, etc.): lo eliminamos.
+                Log::info('Token FCM inválido para padre ' . $padre->id . ', se elimina.', ['error' => $e->getMessage()]);
+                $fcmToken->delete();
+            } catch (\Throwable $e) {
+                Log::warning('Error enviando notificación push a padre ' . $padre->id, ['error' => $e->getMessage()]);
+            }
         }
     }
 

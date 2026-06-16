@@ -141,6 +141,90 @@ class PadreController extends Controller
         return response()->json(['message' => 'Padre retirado correctamente']);
     }
 
+    // GET /api/padres/{id}/deuda-detalle
+    // Retorna el desglose completo de deuda de un padre (multas + cobros),
+    // incluyendo padres retirados (útil para cobranza histórica).
+    public function deudaDetalle(Padre $padre)
+    {
+        $multas = $padre->multas()
+            ->whereIn('estado', [Multa::ESTADO_PENDIENTE, Multa::ESTADO_PARCIAL])
+            ->with('evento')
+            ->get()
+            ->map(fn($m) => [
+                'id'          => $m->id,
+                'tipo'        => 'multa',
+                'descripcion' => $m->evento?->titulo ?? 'Multa',
+                'monto'       => (float) $m->monto,
+                'pagado'      => (float) ($m->monto_pagado ?? 0),
+                'saldo'       => $m->saldo(),
+                'estado'      => $m->estado,
+            ]);
+
+        $cobros = $padre->eventoPadres()
+            ->where('estado', EventoPadre::ESTADO_PENDIENTE)
+            ->whereHas('evento', fn($q) => $q
+                ->where('tipo', Evento::TIPO_CUOTA)
+                ->where('fecha_inicio', '<=', now()->toDateString()))
+            ->with('evento')
+            ->get()
+            ->filter(fn($ep) => $ep->saldo_pendiente > 0)
+            ->map(fn($ep) => [
+                'id'          => $ep->id,
+                'tipo'        => 'cobro',
+                'descripcion' => $ep->evento?->titulo ?? 'Cobro',
+                'monto'       => $ep->monto_real,
+                'pagado'      => (float) $ep->monto_pagado,
+                'saldo'       => $ep->saldo_pendiente,
+                'estado'      => $ep->estado,
+            ]);
+
+        $items       = $multas->concat($cobros)->values();
+        $totalDeuda  = $items->sum('saldo');
+
+        return response()->json([
+            'padre'       => $padre->only(['id', 'codigo', 'nombre', 'hijo', 'grado', 'retirado', 'fecha_retiro']),
+            'items'       => $items,
+            'total_deuda' => $totalDeuda,
+        ]);
+    }
+
+    // PUT /api/padres/{id}/reactivar
+    // Deshace un retiro incorrecto: restaura el padre como activo y
+    // revierte todas las exoneraciones/anulaciones causadas por ese retiro.
+    public function reactivar(Padre $padre)
+    {
+        if (!$padre->retirado) {
+            return response()->json(['message' => 'El padre no está retirado'], 422);
+        }
+
+        DB::transaction(function () use ($padre) {
+            // Revertir multas anuladas por retiro → pendiente
+            $padre->multas()
+                ->where('estado', Multa::ESTADO_ANULADO)
+                ->where('motivo_exoneracion', 'Retiro del alumno')
+                ->update([
+                    'estado'             => Multa::ESTADO_PENDIENTE,
+                    'motivo_exoneracion' => null,
+                ]);
+
+            // Revertir evento_padres exonerados por retiro → pendiente
+            EventoPadre::where('padre_id', $padre->id)
+                ->where('estado', EventoPadre::ESTADO_EXONERADO)
+                ->where('motivo_exoneracion', 'Retiro del alumno')
+                ->update([
+                    'estado'             => EventoPadre::ESTADO_PENDIENTE,
+                    'motivo_exoneracion' => null,
+                ]);
+
+            $padre->update([
+                'retirado'     => false,
+                'fecha_retiro' => null,
+            ]);
+        });
+
+        return response()->json(['message' => 'Padre reactivado correctamente']);
+    }
+
     // DELETE /api/padres/{id}
     public function destroy(Padre $padre)
     {
@@ -335,10 +419,16 @@ class PadreController extends Controller
             return response()->json(['message' => 'Sin perfil de padre'], 404);
         }
 
-        $padre->update([
-            'fcm_token'    => $request->token,
-            'fcm_platform' => $request->plataforma,
-        ]);
+        // Si este token (dispositivo) estaba registrado para otro padre
+        // (ej. se cerró sesión y se entró con otro código en el mismo
+        // celular), lo movemos a este padre en vez de duplicarlo.
+        \App\Models\PadreFcmToken::updateOrCreate(
+            ['token' => $request->token],
+            [
+                'padre_id'   => $padre->id,
+                'plataforma' => $request->plataforma,
+            ]
+        );
 
         return response()->json(['message' => 'Token registrado correctamente']);
     }

@@ -76,7 +76,8 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/mi-estado-tesorero', [PadreController::class, 'miEstadoTesorero']);
 
         // Evento padres
-        Route::put('/evento-padres/{eventoPadre}/pagar', [EventoPadreController::class, 'pagar']);
+        Route::put('/evento-padres/{eventoPadre}/pagar',               [EventoPadreController::class, 'pagar']);
+        Route::put('/evento-padres/{eventoPadre}/revertir-exoneracion', [EventoPadreController::class, 'revertirExoneracion']);
 
         // Padres
         Route::post('/padres/importar',              [PadreController::class, 'importar']);
@@ -84,7 +85,9 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::put('/padres/{padre}',                [PadreController::class, 'update']);
         Route::delete('/padres/{padre}',             [PadreController::class, 'destroy']);
         Route::put('/padres/{padre}/reset-password', [PadreController::class, 'resetPassword']);
+        Route::get('/padres/{padre}/deuda-detalle',  [PadreController::class, 'deudaDetalle']);
         Route::put('/padres/{padre}/retirar',        [PadreController::class, 'retirar']);
+        Route::put('/padres/{padre}/reactivar',      [PadreController::class, 'reactivar']);
 
         // Multas
         Route::get('/multas/{multa}',           [MultaController::class, 'show']);
