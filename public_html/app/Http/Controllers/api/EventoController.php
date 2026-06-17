@@ -26,8 +26,8 @@ class EventoController extends Controller
             ->get()
             ->map(fn($e) => array_merge(
                 $e->toArray(),
-                // Solo calcular resumen para eventos de cuota
-                $e->esCuota() ? ['resumen_pagos' => $e->resumenPagos()] : []
+                ($e->esCuota() || $e->esActividad()) ? ['resumen_pagos' => $e->resumenPagos()] :
+                ($e->esGuardia()                     ? ['resumen_pagos' => $e->resumenGuardia()] : [])
             ));
 
         return response()->json($eventos);
@@ -766,12 +766,83 @@ class EventoController extends Controller
     // GET /api/eventos/{evento}/movimientos
     public function movimientos(Evento $evento)
     {
-        $eventoPadres = EventoPadre::where('evento_id', $evento->id)
-            ->with('padre:id,nombre,codigo,hijo,grado')
-            ->get();
-
         $movimientos = Movimiento::where('evento_id', $evento->id)
             ->orderByDesc('fecha')
+            ->get();
+
+        // ── Guardia (Bapers): basado en multas, no en eventoPadres ────────────
+        if ($evento->esGuardia()) {
+            $multas = Multa::where('evento_id', $evento->id)
+                ->with('padre:id,nombre,codigo,hijo,grado')
+                ->get();
+
+            $resultado = $multas->map(function ($multa) use ($movimientos) {
+                $movsPadre = $movimientos->filter(function ($m) use ($multa) {
+                    if ($m->abono_id) {
+                        return Abono::where('id', $m->abono_id)
+                            ->where('padre_id', $multa->padre_id)
+                            ->where('tipo_deuda', 'multa')
+                            ->where('deuda_id', $multa->id)
+                            ->exists();
+                    }
+                    return false;
+                });
+
+                return [
+                    'padre_id'        => $multa->padre_id,
+                    'nombre'          => $multa->padre->nombre,
+                    'codigo'          => $multa->padre->codigo,
+                    'hijo'            => $multa->padre->hijo,
+                    'grado'           => $multa->padre->grado,
+                    'monto_asignado'  => (float) $multa->monto,
+                    'monto_pagado'    => (float) ($multa->monto_pagado ?? 0),
+                    'estado'          => $multa->estado, // 0=pend, 1=parcial, 2=pagado, 3=exonerado, 4=anulado
+                    'ajuste_resuelto' => 1,
+                    'diferencia'      => (float) $multa->monto - (float) ($multa->monto_pagado ?? 0),
+                    'movimientos'     => $movsPadre->values()->map(fn($m) => [
+                        'tipo'        => $m->tipo,
+                        'monto'       => (float) $m->monto,
+                        'descripcion' => $m->descripcion,
+                        'categoria'   => $m->categoria,
+                        'fecha'       => $m->fecha,
+                        'created_at'  => $m->created_at,
+                        'anulado'     => $m->abono_id
+                            ? Abono::find($m->abono_id)?->estado === Abono::ESTADO_ANULADO
+                            : false,
+                    ]),
+                ];
+            });
+
+            $gastos = Movimiento::where('evento_id', $evento->id)
+                ->where('tipo', Movimiento::TIPO_EGRESO)
+                ->whereNull('abono_id')
+                ->with('registrador:id,name')
+                ->orderByDesc('fecha')
+                ->get()
+                ->map(fn($m) => [
+                    'id'             => $m->id,
+                    'monto'          => (float) $m->monto,
+                    'descripcion'    => $m->descripcion,
+                    'categoria'      => $m->categoria,
+                    'fecha'          => $m->fecha,
+                    'registrado_por' => $m->registrador?->name,
+                ]);
+
+            return response()->json([
+                'evento'           => array_merge([
+                    'id'          => $evento->id,
+                    'titulo'      => $evento->titulo,
+                    'multa_monto' => (float) $evento->multa_monto,
+                ], $evento->resumenGuardia()),
+                'precio_historial' => [],
+                'padres'           => $resultado,
+                'gastos'           => $gastos,
+            ]);
+        }
+
+        // ── Cuota / Actividad: basado en eventoPadres ─────────────────────────
+        $eventoPadres = EventoPadre::where('evento_id', $evento->id)
+            ->with('padre:id,nombre,codigo,hijo,grado')
             ->get();
 
         $resultado = $eventoPadres->map(function ($ep) use ($movimientos, $evento) {
@@ -801,7 +872,7 @@ class EventoController extends Controller
                     'descripcion' => $m->descripcion,
                     'categoria'   => $m->categoria,
                     'fecha'       => $m->fecha,
-                    'created_at'  => $m->created_at, // ← agregar
+                    'created_at'  => $m->created_at,
                     'anulado'     => $m->abono_id
                         ? Abono::find($m->abono_id)?->estado === Abono::ESTADO_ANULADO
                         : false,

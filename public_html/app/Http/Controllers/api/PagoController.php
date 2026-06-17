@@ -25,11 +25,11 @@ class PagoController extends Controller
                     ->whereIn('estado', [Multa::ESTADO_PENDIENTE, 1]) // 1 = parcial
                     ->sum(fn($m) => max(0, (float) $m->monto - (float) ($m->monto_pagado ?? 0)));
 
-                // Cobros de eventos pendientes o parciales
+                // Cobros de eventos pendientes (cuotas y actividades)
                 $cobros = $padre->eventoPadres
-                    ->whereIn('estado', [EventoPadre::ESTADO_PENDIENTE, 1]) // 1 = parcial
-                    ->filter(fn($ep) => optional($ep->evento)->tipo === Evento::TIPO_CUOTA)
-                    ->sum(fn($ep) => max(0, (float) ($ep->evento->multa_monto ?? 0) - (float) ($ep->monto_pagado ?? 0)));
+                    ->where('estado', EventoPadre::ESTADO_PENDIENTE)
+                    ->filter(fn($ep) => in_array(optional($ep->evento)->tipo, [Evento::TIPO_CUOTA, Evento::TIPO_ACTIVIDAD]))
+                    ->sum(fn($ep) => $ep->saldo_pendiente);
 
                 $totalDeuda = (float) ($multas + $cobros);
 

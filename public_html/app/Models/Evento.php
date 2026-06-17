@@ -189,4 +189,35 @@ class Evento extends Model
             'monto_entregado' => (float) $monto_entregado,
         ];
     }
+
+    /**
+     * Resumen para eventos de tipo Guardia (Bapers).
+     * No hay cobros directos — el dinero viene de multas generadas por ausencia.
+     * Si un padre asistió, no tiene multa.
+     */
+    public function resumenGuardia(): array
+    {
+        $multas = $this->multas()->get();
+
+        $monto_entregado = Movimiento::where('evento_id', $this->id)
+            ->where('tipo', Movimiento::TIPO_EGRESO)
+            ->where('categoria', '!=', Movimiento::CAT_CUOTA)
+            ->sum('monto');
+
+        // Padres únicos asignados (sin exonerados ni justificados)
+        $total_padres = $this->eventoPadres()
+            ->whereNotIn('estado', [EventoPadre::ESTADO_EXONERADO, EventoPadre::ESTADO_JUSTIFICADO])
+            ->distinct('padre_id')
+            ->count('padre_id');
+
+        return [
+            'total_padres'    => $total_padres,
+            'pagados'         => $multas->filter(fn($m) => (float) $m->monto_pagado >= (float) $m->monto)->count(),
+            'pendientes'      => $multas->filter(fn($m) => (float) $m->monto_pagado < (float) $m->monto)->count(),
+            'multas_count'    => $multas->count(),
+            'monto_recaudado' => (float) $multas->sum('monto_pagado'),
+            'monto_esperado'  => (float) $multas->sum('monto'),
+            'monto_entregado' => (float) $monto_entregado,
+        ];
+    }
 }
