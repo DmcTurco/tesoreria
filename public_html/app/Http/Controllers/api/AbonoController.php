@@ -115,6 +115,7 @@ class AbonoController extends Controller
                 'registrado_por' => auth()->id(),
                 'abono_id'       => $abono->id,
                 'evento_id'      => $eventoId,
+                'padre_id'       => $abono->padre_id,
             ]);
 
             $this->actualizarDeuda($request->tipo_deuda, $request->deuda_id);
@@ -177,6 +178,7 @@ class AbonoController extends Controller
                     'registrado_por' => auth()->id(),
                     'abono_id'       => $abono->id,
                     'evento_id'      => $eventoId,
+                    'padre_id'       => $abono->padre_id,
                 ]);
 
                 $this->actualizarDeuda($abono->tipo_deuda, $abono->deuda_id);
@@ -242,6 +244,7 @@ class AbonoController extends Controller
                     'registrado_por'        => auth()->id(),
                     'abono_id'              => $abono->id,
                     'movimiento_anulado_id' => $movimientoOriginal->id,
+                    'padre_id'              => $abono->padre_id,
                 ]);
             }
 
@@ -292,7 +295,10 @@ class AbonoController extends Controller
                 ->where('categoria', Movimiento::CAT_CUOTA)
                 ->where('created_at', '>=', $abono->created_at) // ← solo posteriores al abono
                 ->get()
-                ->filter(fn($m) => str_contains($m->descripcion, $abono->padre->nombre))
+                // padre_id directo; fallback por nombre solo para filas antiguas sin padre_id
+                ->filter(fn($m) => $m->padre_id
+                    ? $m->padre_id === $abono->padre_id
+                    : str_contains($m->descripcion, $abono->padre->nombre))
                 ->values()
                 ->map(fn($m) => [
                     'tipo'        => $m->tipo,

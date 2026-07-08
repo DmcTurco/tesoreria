@@ -28,7 +28,7 @@ class Movimiento extends Model
         'abono_id',
         'movimiento_anulado_id',
         'evento_id',
-
+        'padre_id',
     ];
 
     protected $casts = [
@@ -42,6 +42,11 @@ class Movimiento extends Model
     public function registrador()
     {
         return $this->belongsTo(User::class, 'registrado_por');
+    }
+
+    public function padre()
+    {
+        return $this->belongsTo(Padre::class);
     }
     public function movimientoAnulado()
     {

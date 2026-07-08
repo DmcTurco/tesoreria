@@ -32,7 +32,15 @@ class CobroService
         $montoAsignado = (float) ($ep->monto_asignado ?? $ep->evento->multa_monto ?? 0);
 
         $estado = $ep->estado;
-        if ($montoAsignado > 0) {
+
+        // No pisar exonerado/justificado: esos estados solo se cambian
+        // explícitamente con revertir-exoneracion.
+        $esExoneradoOJustificado = in_array($ep->estado, [
+            EventoPadre::ESTADO_EXONERADO,
+            EventoPadre::ESTADO_JUSTIFICADO,
+        ]);
+
+        if ($montoAsignado > 0 && !$esExoneradoOJustificado) {
             $estado = $total >= $montoAsignado
                 ? EventoPadre::ESTADO_PRESENTE
                 : EventoPadre::ESTADO_PENDIENTE;
@@ -70,6 +78,7 @@ class CobroService
             'registrado_por' => $registradoPor,
             'abono_id'       => $abono->id,
             'evento_id'      => $evento->id,
+            'padre_id'       => $ep->padre_id,
         ]);
 
         $this->sincronizar($ep);
@@ -130,6 +139,7 @@ class CobroService
                 'registrado_por' => $registradoPor,
                 'abono_id'       => $abonoNuevo->id,
                 'evento_id'      => $evento->id,
+                'padre_id'       => $padre->id,
             ]);
         }
 
@@ -142,6 +152,7 @@ class CobroService
             'fecha'          => now()->toDateString(),
             'registrado_por' => $registradoPor,
             'evento_id'      => $evento->id,
+            'padre_id'       => $padre->id,
         ]);
 
         $this->sincronizar($ep);
@@ -177,6 +188,7 @@ class CobroService
             'registrado_por' => $registradoPor,
             'abono_id'       => $abono->id,
             'evento_id'      => $evento->id,
+            'padre_id'       => $padre->id,
         ]);
 
         $this->sincronizar($ep);

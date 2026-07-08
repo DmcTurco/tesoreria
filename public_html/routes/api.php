@@ -64,10 +64,6 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/admin/restore',                    [AdminController::class, 'restore']);
         Route::post('/admin/migrate',                    [AdminController::class, 'migrate']);
         Route::post('/admin/migrate-fresh',              [AdminController::class, 'migrateFresh']);
-        Route::post('/admin/fix-movimientos-anulados',   [AdminController::class, 'fixMovimientosAnulados']);
-        Route::post('/admin/restaurar-movimientos',      [AdminController::class, 'restaurarMovimientos']);
-        Route::post('/admin/fix-cobros-estado',          [AdminController::class, 'fixCobrosEstado']);
-        Route::post('/admin/fix-monto-pagado-cobros',    [AdminController::class, 'fixMontoPagadoCobros']);
         Route::post('/admin/enviar-recordatorios',       [AdminController::class, 'enviarRecordatorios']);
         Route::post('/admin/enviar-recordatorios-deudas', [AdminController::class, 'enviarRecordatoriosDeudas']);
 
@@ -76,7 +72,6 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/mi-estado-tesorero', [PadreController::class, 'miEstadoTesorero']);
 
         // Evento padres
-        Route::put('/evento-padres/{eventoPadre}/pagar',               [EventoPadreController::class, 'pagar']);
         Route::put('/evento-padres/{eventoPadre}/revertir-exoneracion', [EventoPadreController::class, 'revertirExoneracion']);
 
         // Padres
@@ -91,7 +86,6 @@ Route::middleware('auth:sanctum')->group(function () {
 
         // Multas
         Route::get('/multas/{multa}',           [MultaController::class, 'show']);
-        Route::post('/multas/{multa}/pagar',    [MultaController::class, 'pagar']);
         Route::post('/multas/{multa}/exonerar', [MultaController::class, 'exonerar']);
         Route::post('/multas/{multa}/anular',   [MultaController::class, 'anular']);
 
@@ -120,7 +114,6 @@ Route::middleware('auth:sanctum')->group(function () {
 
         Route::post('/eventos',                              [EventoController::class, 'store']);
         Route::put('/eventos/{evento}',                      [EventoController::class, 'update']);
-        Route::post('/eventos/{evento}/exonerar-padre',      [EventoController::class, 'exonerarPadre']);
         Route::post('/eventos/{evento}/agregar-padre',       [EventoController::class, 'agregarPadre']);
         Route::put('/eventos/{evento}/quitar-padre/{padre}', [EventoController::class, 'quitarPadre']);
         Route::delete('/eventos/{evento}/quitar-padre/{padre}', [EventoController::class, 'eliminarPadre']);

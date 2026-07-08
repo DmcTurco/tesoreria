@@ -3,18 +3,19 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Models\Evento;
 use App\Models\EventoPadre;
-use Illuminate\Http\Request;
+use App\Services\CobroService;
+use App\Services\PushNotificationService;
 
 class EventoPadreController extends Controller
 {
     // PUT /api/evento-padres/{id}/revertir-exoneracion  (role:0)
-    // Revierte un evento_padre exonerado de vuelta a estado pendiente.
+    // Revierte una exoneración o justificación hecha por error.
+    // Restaura monto_pagado y estado desde los abonos activos (CobroService).
     public function revertirExoneracion(EventoPadre $eventoPadre)
     {
-        if ($eventoPadre->estado !== EventoPadre::ESTADO_EXONERADO) {
-            return response()->json(['message' => 'El registro no está exonerado'], 422);
+        if (!in_array($eventoPadre->estado, [EventoPadre::ESTADO_EXONERADO, EventoPadre::ESTADO_JUSTIFICADO])) {
+            return response()->json(['message' => 'El registro no está exonerado ni justificado'], 422);
         }
 
         $eventoPadre->update([
@@ -23,40 +24,25 @@ class EventoPadreController extends Controller
             'exonerado_por'      => null,
         ]);
 
-        return response()->json(['message' => 'Exoneración revertida correctamente']);
+        // Restaurar pago/estado desde los abonos activos
+        (new CobroService())->sincronizar($eventoPadre->fresh());
+        $eventoPadre->refresh();
+
+        $evento = $eventoPadre->evento;
+
+        if ($eventoPadre->padre && $evento) {
+            (new PushNotificationService())->enviarAPadre(
+                $eventoPadre->padre,
+                'Exoneración revertida',
+                "Tu exoneración de: {$evento->titulo} fue revertida. La asignación vuelve a estar vigente.",
+                ['tipo' => 'asignacion', 'evento_id' => (string) $evento->id]
+            );
+        }
+
+        return response()->json([
+            'message'      => 'Exoneración revertida correctamente',
+            'estado'       => $eventoPadre->estado,
+            'monto_pagado' => (float) $eventoPadre->monto_pagado,
+        ]);
     }
-
-    // public function registrarAsistencia(Request $request, Evento $evento)
-    // {
-    //     $request->validate([
-    //         'padre_id'     => 'required|exists:padres,id',
-    //         'es_reemplazo' => 'boolean',
-    //         'anotacion'    => 'nullable|string|max:255',
-    //     ]);
-
-    //     $ep = EventoPadre::where('evento_id', $evento->id)
-    //         ->where('padre_id', $request->padre_id)
-    //         ->first();
-
-    //     if (!$ep) {
-    //         return response()->json(['message' => 'Padre no asignado'], 422);
-    //     }
-
-    //     $ep->update([
-    //         'estado'       => EventoPadre::ESTADO_PRESENTE,
-    //         'fecha'        => now()->toDateString(),
-    //         'es_reemplazo' => $request->boolean('es_reemplazo'),
-    //         'anotacion'    => $request->anotacion,
-    //     ]);
-
-    //     return response()->json(['message' => 'Asistencia registrada ✅']);
-    // }
-
-    // // PUT /evento-padres/{eventoPadre}/pagar  (role:0)
-    // public function pagar(Request $request, EventoPadre $eventoPadre)
-    // {
-    //     $eventoPadre->update(['estado' => EventoPadre::ESTADO_PRESENTE]);
-
-    //     return response()->json(['message' => 'Cobro marcado como pagado.']);
-    // }
 }

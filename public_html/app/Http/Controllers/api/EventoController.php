@@ -646,46 +646,7 @@ class EventoController extends Controller
         ]);
     }
 
-    // POST /api/eventos/{id}/exonerar-padre
-    public function exonerarPadre(Request $request, Evento $evento)
-    {
-        $request->validate([
-            'padre_id'           => 'required|integer|exists:padres,id',
-            'motivo_exoneracion' => 'required|string|max:500',
-            'fecha'              => 'nullable|date',
-        ]);
-
-        $query = EventoPadre::where('evento_id', $evento->id)
-            ->where('padre_id', $request->padre_id);
-
-        if ($evento->esGuardia()) {
-            $query->where('fecha', $request->fecha ?? now()->toDateString());
-        }
-
-        $ep = $query->first();
-
-        if (!$ep) {
-            return response()->json(['message' => 'Asignación no encontrada'], 404);
-        }
-
-        $ep->update([
-            'estado'             => EventoPadre::ESTADO_EXONERADO,
-            'motivo_exoneracion' => $request->motivo_exoneracion,
-            'exonerado_por'      => $request->user()->id,
-            'monto_pagado'       => 0,
-        ]);
-
-        if ($ep->padre) {
-            (new PushNotificationService())->enviarAPadre(
-                $ep->padre,
-                'Asignación exonerado',
-                "Fuiste exonerado de: {$evento->titulo}. Ya no debes asistir ni pagar por esta asignación.",
-                ['tipo' => 'exoneracion', 'evento_id' => (string) $evento->id]
-            );
-        }
-
-        return response()->json(['message' => 'Padre exonerado correctamente']);
-    }
+    // ❌ exonerarPadre() eliminado → unificado en quitarPadre (PUT /eventos/{evento}/quitar-padre/{padre})
 
     // GET /api/eventos/{id}/padres
     public function padres(Evento $evento)
@@ -847,11 +808,16 @@ class EventoController extends Controller
 
         $resultado = $eventoPadres->map(function ($ep) use ($movimientos, $evento) {
             $movsPadre = $movimientos->filter(function ($m) use ($ep) {
+                // padre_id directo (filas nuevas)
+                if ($m->padre_id) {
+                    return $m->padre_id === $ep->padre_id;
+                }
                 if ($m->abono_id) {
                     return Abono::where('id', $m->abono_id)
                         ->where('padre_id', $ep->padre_id)
                         ->exists();
                 }
+                // fallback por nombre solo para filas antiguas sin padre_id
                 return str_contains($m->descripcion, $ep->padre->nombre);
             });
 
@@ -982,7 +948,7 @@ class EventoController extends Controller
      */
     private function asignarTodosLosPadres(Evento $evento): void
     {
-        foreach (Padre::all() as $padre) {
+        foreach (Padre::where('retirado', false)->get() as $padre) {
             $this->crearFilasPadre($evento, $padre->id, null);
         }
     }

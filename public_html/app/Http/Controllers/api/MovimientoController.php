@@ -116,6 +116,15 @@ class MovimientoController extends Controller
     // DELETE /api/movimientos/{id}
     public function destroy(Movimiento $movimiento)
     {
+        // Un movimiento que proviene de un abono no se elimina directamente:
+        // hay que anular el abono para que la deuda vuelva a pendiente/parcial
+        // y la caja quede cuadrada con su contra-asiento.
+        if ($movimiento->abono_id) {
+            return response()->json([
+                'message' => 'Este movimiento proviene de un abono. Usa "Anular abono" para revertir el pago y que la deuda vuelva a estar pendiente.',
+            ], 422);
+        }
+
         $movimiento->delete();
 
         return response()->json(['message' => 'Movimiento eliminado correctamente']);
