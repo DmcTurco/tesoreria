@@ -31,6 +31,50 @@ class PadreController extends Controller
         return response()->json($padre->load('user', 'abonos', 'multas'));
     }
 
+    /**
+     * GET /api/padres/con-deuda
+     * Devuelve solo los padres que tienen deuda pendiente (multas + cobros).
+     * (Movido desde el antiguo PagoController.)
+     */
+    public function conDeuda(Request $request)
+    {
+        $padres = Padre::with(['user', 'multas', 'eventoPadres.evento'])
+            // Excluir retirados salvo que se pidan explícitamente (cobranza histórica)
+            ->when(!$request->boolean('con_retirados'), fn($q) => $q->where('retirado', false))
+            ->get()
+            ->map(function ($padre) {
+                // Multas pendientes o parciales
+                $multas = $padre->multas
+                    ->whereIn('estado', [Multa::ESTADO_PENDIENTE, 1]) // 1 = parcial
+                    ->sum(fn($m) => max(0, (float) $m->monto - (float) ($m->monto_pagado ?? 0)));
+
+                // Cobros de eventos pendientes (cuotas y actividades)
+                $cobros = $padre->eventoPadres
+                    ->where('estado', EventoPadre::ESTADO_PENDIENTE)
+                    ->filter(fn($ep) => in_array(optional($ep->evento)->tipo, [Evento::TIPO_CUOTA, Evento::TIPO_ACTIVIDAD]))
+                    ->sum(fn($ep) => $ep->saldo_pendiente);
+
+                $totalDeuda = (float) ($multas + $cobros);
+
+                return [
+                    'id'          => $padre->id,
+                    'nombre'      => $padre->nombre,
+                    'hijo'        => $padre->hijo ?? '—',
+                    'dni'         => $padre->dni,
+                    'deuda_total' => $totalDeuda,
+                    'desglose'    => [
+                        'multas' => (float) $multas,
+                        'cobros' => (float) $cobros,
+                    ],
+                ];
+            })
+            ->filter(fn($p) => $p['deuda_total'] > 0)
+            ->sortByDesc('deuda_total')
+            ->values();
+
+        return response()->json($padres);
+    }
+
     // POST /api/padres
     public function store(Request $request)
     {

@@ -822,6 +822,7 @@ class EventoController extends Controller
             });
 
             return [
+                'evento_padre_id' => $ep->id,
                 'padre_id'        => $ep->padre_id,
                 'nombre'          => $ep->padre->nombre,
                 'codigo'          => $ep->padre->codigo,
