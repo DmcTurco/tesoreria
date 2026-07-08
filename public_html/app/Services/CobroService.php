@@ -117,10 +117,14 @@ class CobroService
             $pendienteAnular -= (float) $abono->monto;
         }
 
-        // Si se anuló de más, crear abono por el exceso restante
+        // Si se anuló de más, crear abono por el exceso restante.
+        // OJO: este reabono es solo un asiento del libro de deudas (abonos),
+        // NO crea Movimiento: el dinero ya entró a caja con el abono original
+        // y la salida real es el egreso de devolución de abajo.
+        // (Crear un ingreso aquí duplicaría la recaudación.)
         $nuevoNeto = (float) $ep->monto_pagado - $montoDevolucion;
         if ($nuevoNeto > 0) {
-            $abonoNuevo = Abono::create([
+            Abono::create([
                 'padre_id'       => $padre->id,
                 'tipo_deuda'     => 'cobro',
                 'deuda_id'       => $ep->id,
@@ -128,18 +132,6 @@ class CobroService
                 'fecha'          => now()->toDateString(),
                 'registrado_por' => $registradoPor,
                 'estado'         => Abono::ESTADO_ACTIVO,
-            ]);
-
-            Movimiento::create([
-                'tipo'           => Movimiento::TIPO_INGRESO,
-                'monto'          => $nuevoNeto,
-                'descripcion'    => "Reabono tras devolución: {$padre->nombre} — {$evento->titulo}",
-                'categoria'      => Movimiento::CAT_CUOTA,
-                'fecha'          => now()->toDateString(),
-                'registrado_por' => $registradoPor,
-                'abono_id'       => $abonoNuevo->id,
-                'evento_id'      => $evento->id,
-                'padre_id'       => $padre->id,
             ]);
         }
 
