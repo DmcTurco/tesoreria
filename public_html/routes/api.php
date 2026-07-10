@@ -37,6 +37,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/presupuestos',                 [PresupuestoController::class, 'index']);
     Route::get('/reportes/dashboard',           [ReporteController::class,    'dashboard']);
     Route::get('/reportes/movimientos-por-mes', [ReporteController::class,    'movimientosPorMes']);
+    Route::get('/reportes/deuda-matriz',        [ReporteController::class,    'deudaMatriz']);
+    Route::get('/reportes/retirados-pendientes', [ReporteController::class,   'retiradosPendientes']);
     Route::get('/eventos/{evento}/precio-historial', [EventoController::class, 'precioHistorial']);
     Route::get('/eventos/{evento}/gastos',           [EventoController::class, 'gastos']);
 

@@ -84,21 +84,41 @@ class AdminController extends Controller
         }
         $data = $normalized;
 
+        // Insertar en orden de dependencias (padres antes que movimientos, etc.)
+        // para no violar foreign keys. Las tablas no listadas van al final.
+        $ordenPreferido = [
+            'users', 'padres', 'eventos', 'evento_padres', 'multas', 'abonos',
+            'movimientos', 'evento_precio_historial', 'padre_fcm_tokens', 'presupuestos',
+        ];
+        uksort($data, function ($a, $b) use ($ordenPreferido) {
+            $ia = array_search($a, $ordenPreferido); $ia = $ia === false ? 999 : $ia;
+            $ib = array_search($b, $ordenPreferido); $ib = $ib === false ? 999 : $ib;
+            return $ia <=> $ib;
+        });
+
         $tablesRestored = 0;
         $rowsInserted   = 0;
         $errors         = [];
 
         try {
+            // Desactivar validación de FKs durante TODO el restore
+            // (truncate + inserts), no solo durante el truncate.
+            if ($driver === 'mysql') {
+                DB::statement('SET FOREIGN_KEY_CHECKS=0');
+            } elseif ($driver === 'pgsql') {
+                try {
+                    DB::statement("SET session_replication_role = 'replica'");
+                } catch (\Exception $e) {
+                    // requiere superusuario; el orden de inserción cubre el caso
+                }
+            }
+
             // 1. Truncar todas las tablas primero
             foreach ($data as $table => $rows) {
                 if (in_array($table, $skip) || !Schema::hasTable($table)) continue;
                 try {
                     if ($driver === 'pgsql') {
                         DB::statement("TRUNCATE TABLE \"{$table}\" RESTART IDENTITY CASCADE");
-                    } elseif ($driver === 'mysql') {
-                        DB::statement('SET FOREIGN_KEY_CHECKS=0');
-                        DB::table($table)->truncate();
-                        DB::statement('SET FOREIGN_KEY_CHECKS=1');
                     } else {
                         DB::table($table)->truncate();
                     }
@@ -107,7 +127,7 @@ class AdminController extends Controller
                 }
             }
 
-            // 2. Insertar datos
+            // 2. Insertar datos (en orden de dependencias)
             foreach ($data as $table => $rows) {
                 if (in_array($table, $skip) || !Schema::hasTable($table)) continue;
                 if (empty($rows)) { $tablesRestored++; continue; }
@@ -120,6 +140,17 @@ class AdminController extends Controller
                     $tablesRestored++;
                 } catch (\Exception $e) {
                     $errors[] = "Insert {$table}: " . $e->getMessage();
+                }
+            }
+
+            // Reactivar validación de FKs
+            if ($driver === 'mysql') {
+                DB::statement('SET FOREIGN_KEY_CHECKS=1');
+            } elseif ($driver === 'pgsql') {
+                try {
+                    DB::statement("SET session_replication_role = 'origin'");
+                } catch (\Exception $e) {
+                    // ignorar
                 }
             }
 
