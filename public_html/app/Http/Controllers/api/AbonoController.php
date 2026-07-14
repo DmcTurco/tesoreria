@@ -120,10 +120,26 @@ class AbonoController extends Controller
 
             $this->actualizarDeuda($request->tipo_deuda, $request->deuda_id);
 
+            // ── Notificación con detalle: concepto pagado + saldo restante ──
+            $concepto = null;
+            if ($request->tipo_deuda === 'multa') {
+                $concepto = Multa::find($request->deuda_id)?->concepto;
+            } else {
+                $concepto = $ep?->evento?->titulo ?? null;
+            }
+
+            $cuerpo = 'Se registró tu pago de S/ ' . number_format((float) $abono->monto, 2)
+                . ($concepto ? " por: {$concepto}." : '.');
+
+            $saldoTotal = $abono->padre->saldoDeuda();
+            $cuerpo .= $saldoTotal > 0
+                ? ' Saldo pendiente: S/ ' . number_format($saldoTotal, 2) . '.'
+                : ' ¡Estás al día con todos tus pagos! ✅';
+
             (new PushNotificationService())->enviarAPadre(
                 $abono->padre,
                 'Pago registrado',
-                'Se registró un pago de S/ ' . number_format((float) $abono->monto, 2) . '.',
+                $cuerpo,
                 ['tipo' => 'abono', 'abono_id' => (string) $abono->id]
             );
         });
@@ -188,8 +204,13 @@ class AbonoController extends Controller
         if ($padre) {
             $cantidad = count($request->items);
             $cuerpo = $cantidad === 1
-                ? 'Se registró un pago de S/ ' . number_format($totalRegistrado, 2) . '.'
-                : "Se registró un pago de S/ " . number_format($totalRegistrado, 2) . " ({$cantidad} deudas).";
+                ? 'Se registró tu pago de S/ ' . number_format($totalRegistrado, 2) . '.'
+                : "Se registró tu pago de S/ " . number_format($totalRegistrado, 2) . " ({$cantidad} deudas).";
+
+            $saldoTotal = $padre->saldoDeuda();
+            $cuerpo .= $saldoTotal > 0
+                ? ' Saldo pendiente: S/ ' . number_format($saldoTotal, 2) . '.'
+                : ' ¡Estás al día con todos tus pagos! ✅';
 
             (new PushNotificationService())->enviarAPadre(
                 $padre,

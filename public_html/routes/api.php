@@ -53,6 +53,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::middleware('role:0,1')->group(function () {
         Route::post('/eventos/{evento}/asistencia', [EventoController::class, 'registrarAsistencia']);
         Route::post('/eventos/{evento}/cerrar',     [EventoController::class,      'cerrar']);
+
+        Route::get('/mi-estado-tesorero', [PadreController::class, 'miEstadoTesorero']);
     });
 
     // ── Solo tesorero (0) ─────────────────────────────────────────────────────
@@ -68,7 +70,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
 
         // Estado padre (para modal de pago)
-        Route::get('/mi-estado-tesorero', [PadreController::class, 'miEstadoTesorero']);
+
 
         // Evento padres
         Route::put('/evento-padres/{eventoPadre}/revertir-exoneracion', [EventoPadreController::class, 'revertirExoneracion']);

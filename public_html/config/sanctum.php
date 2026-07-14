@@ -47,7 +47,9 @@ return [
     |
     */
 
-    'expiration' => null,
+    // Los tokens expiran a los 30 minutos de emitidos. La app detecta el 401
+    // y redirige al login (con huella/datos recordados el re-ingreso es rápido).
+    'expiration' => 30,
 
     /*
     |--------------------------------------------------------------------------

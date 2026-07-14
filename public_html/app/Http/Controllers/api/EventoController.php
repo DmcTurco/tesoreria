@@ -179,6 +179,22 @@ class EventoController extends Controller
                 'registrado_por' => $request->user()->id,
             ]);
 
+            // Avisar el cambio de precio a los padres asignados al evento
+            // (pendientes y pagados: a ambos les afecta el ajuste).
+            $padresAfectados = Padre::whereIn('id', EventoPadre::where('evento_id', $evento->id)
+                    ->whereNotIn('estado', [EventoPadre::ESTADO_EXONERADO, EventoPadre::ESTADO_JUSTIFICADO])
+                    ->pluck('padre_id'))
+                ->whereHas('fcmTokens')
+                ->get();
+
+            (new PushNotificationService())->enviarAPadres(
+                $padresAfectados,
+                'Cambio de monto',
+                "El monto de \"{$evento->titulo}\" cambió de S/ " . number_format($montoAnterior, 2)
+                    . ' a S/ ' . number_format($montoNuevo, 2) . '.',
+                ['tipo' => 'cambio_precio', 'evento_id' => (string) $evento->id]
+            );
+
             // Pendientes → nuevo precio, sin ajuste pendiente
             EventoPadre::where('evento_id', $evento->id)
                 ->where('estado', EventoPadre::ESTADO_PENDIENTE)
@@ -282,8 +298,10 @@ class EventoController extends Controller
                     ];
                 }
 
+                $servicioPush = new PushNotificationService();
+
                 foreach ($montosPorPadre as $padreId => $data) {
-                    Multa::firstOrCreate([
+                    $multa = Multa::firstOrCreate([
                         'padre_id'  => $padreId,
                         'evento_id' => $evento->id,
                     ], [
@@ -292,6 +310,17 @@ class EventoController extends Controller
                         'estado'         => Multa::ESTADO_PENDIENTE,
                         'fecha_generada' => now()->toDateString(),
                     ]);
+
+                    // Notificar al padre la multa recién generada (motivo y monto).
+                    if ($multa->wasRecentlyCreated && $multa->padre) {
+                        $servicioPush->enviarAPadre(
+                            $multa->padre,
+                            'Multa generada',
+                            "{$data['concepto']} — S/ " . number_format((float) $data['monto'], 2)
+                                . '. Acércate a tesorería para regularizarla.',
+                            ['tipo' => 'multa', 'multa_id' => (string) $multa->id]
+                        );
+                    }
                 }
             }
 
