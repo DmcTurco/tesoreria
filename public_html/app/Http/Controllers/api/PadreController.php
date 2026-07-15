@@ -84,6 +84,10 @@ class PadreController extends Controller
             'grado'    => 'required|string|max:50',
             'telefono' => 'nullable|string|max:20',
             'password' => 'required|string|min:6',
+            // IDs de eventos activos (cuota/actividad) que el padre SÍ debe pagar.
+            // Si no se envía el campo → comportamiento legacy (todas las cuotas pendientes).
+            'eventos_pagar'   => 'sometimes|array',
+            'eventos_pagar.*' => 'integer|exists:eventos,id',
         ]);
 
         return DB::transaction(function () use ($request) {
@@ -108,19 +112,57 @@ class PadreController extends Controller
                 'padre_id'  => $padre->id,
             ]);
 
-            // Auto-asignar a eventos de cuota activos
-            Evento::where('tipo', Evento::TIPO_CUOTA)
-                ->where('estado', 0) // 0 = activo, 1 = cerrado
-                ->get()
-                ->each(function ($evento) use ($padre) {
-                    EventoPadre::firstOrCreate(
-                        ['evento_id' => $evento->id, 'padre_id' => $padre->id, 'fecha' => null],
-                        ['estado' => EventoPadre::ESTADO_PENDIENTE, 'monto_asignado' => $evento->multa_monto]
-                    );
-                });
+            if ($request->has('eventos_pagar')) {
+                // ── Asignación selectiva ──────────────────────────────────
+                // El tesorero eligió qué eventos activos (cuota/actividad)
+                // debe pagar el padre nuevo. Los NO elegidos se registran
+                // como EXONERADO con motivo, para trazabilidad y para poder
+                // revertirlos luego (endpoint revertir-exoneracion).
+                $seleccionados = collect($request->eventos_pagar)->map(fn ($id) => (int) $id);
+
+                // updateOrCreate (no firstOrCreate): el PadreObserver ya creó
+                // estas filas como PENDIENTE al hacer Padre::create(), así que
+                // aquí hay que SOBRESCRIBIR el estado según la selección.
+                Evento::whereIn('tipo', [Evento::TIPO_CUOTA, Evento::TIPO_ACTIVIDAD])
+                    ->where('estado', Evento::ESTADO_ACTIVO)
+                    ->get()
+                    ->each(function ($evento) use ($padre, $seleccionados, $request) {
+                        $debePagar = $seleccionados->contains($evento->id);
+                        $monto     = $evento->tiene_multa ? $evento->multa_monto : null;
+
+                        EventoPadre::updateOrCreate(
+                            ['evento_id' => $evento->id, 'padre_id' => $padre->id, 'fecha' => null],
+                            $debePagar
+                                ? [
+                                    'estado'             => EventoPadre::ESTADO_PENDIENTE,
+                                    'monto_asignado'     => $monto,
+                                    'motivo_exoneracion' => null,
+                                    'exonerado_por'      => null,
+                                ]
+                                : [
+                                    'estado'             => EventoPadre::ESTADO_EXONERADO,
+                                    'monto_asignado'     => $monto, // conserva el monto por si se revierte
+                                    'motivo_exoneracion' => 'Ingreso posterior al evento',
+                                    'exonerado_por'      => $request->user()?->id,
+                                ]
+                        );
+                    });
+            } else {
+                // ── Comportamiento legacy (clientes que no envían eventos_pagar) ──
+                Evento::where('tipo', Evento::TIPO_CUOTA)
+                    ->where('estado', Evento::ESTADO_ACTIVO)
+                    ->get()
+                    ->each(function ($evento) use ($padre) {
+                        EventoPadre::firstOrCreate(
+                            ['evento_id' => $evento->id, 'padre_id' => $padre->id, 'fecha' => null],
+                            ['estado' => EventoPadre::ESTADO_PENDIENTE, 'monto_asignado' => $evento->multa_monto]
+                        );
+                    });
+            }
 
             return response()->json([
-                'message' => 'Padre registrado correctamente',
+                'message' => 'Padre registrado correctamente [v2-exonera]',
+                'eventos_pagar_recibidos' => $request->eventos_pagar ?? 'NO RECIBIDO',
                 'padre'   => $padre,
                 'usuario' => [
                     'username' => $user->username,
