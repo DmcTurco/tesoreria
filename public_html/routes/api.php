@@ -60,6 +60,9 @@ Route::middleware('auth:sanctum')->group(function () {
     // ── Solo tesorero (0) ─────────────────────────────────────────────────────
     Route::middleware('role:0')->group(function () {
 
+        // Reportes de gestión
+        Route::get('/reportes/balance', [ReporteController::class, 'balance']);
+
         // Admin / DB
         Route::get('/admin/backup',                      [AdminController::class, 'backup']);
         Route::post('/admin/restore',                    [AdminController::class, 'restore']);
