@@ -19,9 +19,12 @@ use Carbon\Carbon;
 class EventoController extends Controller
 {
     // GET /api/eventos
-    public function index()
+    public function index(Request $request)
     {
         $eventos = Evento::with('creador')
+            // Profesora y padres no deben ver eventos futuros (aún no iniciados):
+            // les confunde. El tesorero sí los ve, porque los está gestionando.
+            ->when(!$request->user()->isTesorero(), fn($q) => $q->where('fecha_inicio', '<=', now()->toDateString()))
             ->orderByDesc('fecha_inicio')
             ->get()
             ->map(fn($e) => array_merge(

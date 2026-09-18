@@ -38,9 +38,12 @@ class EnviarRecordatoriosDeudaCommand extends Command
             $totalMultas = $multasPendientes->sum(fn (Multa $m) => $m->saldo());
 
             // Cobros (eventos) pendientes: saldo_pendiente (monto_real - monto_pagado) > 0
+            // Se excluyen eventos futuros (fecha_inicio > hoy): aún no deberían cobrarse.
             $cobrosPendientes = EventoPadre::where('padre_id', $padre->id)
                 ->where('estado', EventoPadre::ESTADO_PENDIENTE)
-                ->whereHas('evento', fn ($q) => $q->where('tipo', Evento::TIPO_CUOTA))
+                ->whereHas('evento', fn ($q) => $q
+                    ->where('tipo', Evento::TIPO_CUOTA)
+                    ->where('fecha_inicio', '<=', now()->toDateString()))
                 ->with('evento')
                 ->get()
                 ->filter(fn (EventoPadre $ep) => $ep->saldo_pendiente > 0);

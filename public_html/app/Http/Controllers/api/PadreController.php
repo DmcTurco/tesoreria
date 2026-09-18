@@ -447,9 +447,13 @@ class PadreController extends Controller
         }
 
         // Cuotas y actividades pendientes de pago (tipo=3 y tipo=4)
+        // Se excluyen eventos futuros (fecha_inicio > hoy): a los padres les confunde
+        // ver cobros de eventos que el tesorero todavía está preparando.
         $cobros = $padre->eventoPadres()
             ->where('estado', EventoPadre::ESTADO_PENDIENTE)
-            ->whereHas('evento', fn($q) => $q->whereIn('tipo', [Evento::TIPO_CUOTA, Evento::TIPO_ACTIVIDAD]))
+            ->whereHas('evento', fn($q) => $q
+                ->whereIn('tipo', [Evento::TIPO_CUOTA, Evento::TIPO_ACTIVIDAD])
+                ->where('fecha_inicio', '<=', now()->toDateString()))
             ->with('evento')
             ->get()
             ->filter(function ($ep) {
@@ -465,6 +469,7 @@ class PadreController extends Controller
             ->whereHas('evento', fn($q) => $q
                 ->whereIn('tipo', [Evento::TIPO_GUARDIA, Evento::TIPO_FAENA, Evento::TIPO_REUNION])
                 ->where('estado', 0) // 0 = activo, 1 = cerrado
+                ->where('fecha_inicio', '<=', now()->toDateString())
             )
             ->with('evento')
             ->get();
@@ -484,7 +489,9 @@ class PadreController extends Controller
                 }
                 return array_merge($abono->toArray(), ['monto_neto' => $montoNeto]);
             }),
-            'eventos'     => $padre->eventoPadres()->with('evento')->orderByDesc('created_at')->get(),
+            'eventos'     => $padre->eventoPadres()
+                ->whereHas('evento', fn($q) => $q->where('fecha_inicio', '<=', now()->toDateString()))
+                ->with('evento')->orderByDesc('created_at')->get(),
             'cobros'      => $cobros,
             'asignaciones' => $asignaciones,
         ]);
